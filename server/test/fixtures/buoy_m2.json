@@ -1,0 +1,11 @@
+{
+  "table": {
+    "columnNames": ["time", "station_id", "WindDirection", "WindSpeed", "Gust", "WaveHeight", "WavePeriod", "MeanWaveDirection", "SeaTemperature", "AtmosphericPressure", "AirTemperature", "Hmax"],
+    "columnTypes": ["String", "String", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double"],
+    "columnUnits": ["UTC", null, "degrees true", "knots", "knots", "meters", "seconds", "degrees_true", "degrees_C", "millibars", "degrees_C", "meters"],
+    "rows": [
+      ["2026-10-24T12:00:00Z", "M2", 185, 37.684, 47.474, 2.695, 4.922, 336, 14.33, 986.34, 13.438, 0],
+      ["2026-10-24T13:00:00Z", "M2", 202, 30.17, 42.237, 2.695, 4.922, 336, 14.324, 984.68, 14.561, 0]
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "table": {
+    "columnNames": ["time", "stationID", "tide_time_category", "Water_Level_ODMalin"],
+    "columnTypes": ["String", "String", "String", "double"],
+    "columnUnits": ["UTC", null, null, "metres"],
+    "rows": [
+      ["2026-10-23T15:05:00Z", "Howth", "LOW", -1.287],
+      ["2026-10-23T21:25:00Z", "Howth", "HIGH", 1.579],
+      ["2026-10-24T03:30:00Z", "Howth", "LOW", -1.657],
+      ["2026-10-24T10:00:00Z", "Howth", "HIGH", 1.52],
+      ["2026-10-24T15:40:00Z", "Howth", "LOW", -1.518],
+      ["2026-10-24T22:05:00Z", "Howth", "HIGH", 1.739],
+      ["2026-10-25T04:00:00Z", "Howth", "LOW", -1.823],
+      ["2026-10-25T10:35:00Z", "Howth", "HIGH", 1.657],
+      ["2026-10-25T16:15:00Z", "Howth", "LOW", -1.715],
+      ["2026-10-25T22:45:00Z", "Howth", "HIGH", 1.856],
+      ["2026-10-26T04:35:00Z", "Howth", "LOW", -1.943],
+      ["2026-10-26T11:10:00Z", "Howth", "HIGH", 1.755]
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "howth-cg-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Irish Coast Guard Howth station wall dashboard (Phase 1)",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "start": "npm start -w server",
+    "screenshots": "node scripts/screenshot.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

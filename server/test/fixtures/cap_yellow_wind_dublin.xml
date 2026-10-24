@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet type="text/xsl" href="https://cap.met.ie/cap-en-style.xsl"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>2.49.0.1.372.0.261024081905.50f22198-3eca-4d01-a61d-438433469359</identifier>
+  <sender>forecasts@met.ie</sender>
+  <sent>2026-10-24T08:19:05+01:00</sent>
+  <status>Actual</status>
+  <msgType>Update</msgType>
+  <scope>Public</scope>
+  <incidents>Boelo</incidents>
+  <references>forecasts@met.ie,2.49.0.1.372.0.261023205915.e5318149-5145-493e-beb6-92f2a6f98a35,2026-10-23T20:59:15+01:00</references>
+  <info>
+    <language>en-GB</language>
+    <category>Met</category>
+    <event>Yellow Wind</event>
+    <responseType>Monitor</responseType>
+    <urgency>Future</urgency>
+    <severity>Moderate</severity>
+    <certainty>Likely</certainty>
+    <effective>2026-10-23T20:59:15+01:00</effective>
+    <onset>2026-10-24T18:00:00+01:00</onset>
+    <expires>2026-10-25T12:00:00+00:00</expires>
+    <senderName>Met Éireann</senderName>
+    <headline>Status Yellow - Wind warning for Cavan, Dublin, Longford, Louth, Meath, Monaghan, Westmeath</headline>
+    <description>&lt;p&gt;Storm Boelo: Very strong southwesterly winds will veer westerly with severe gusts.&lt;/p&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;&lt;p&gt;Be aware of potential impacts:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Debris, loose objects displaced&lt;/li&gt;&lt;li&gt;Difficult driving and cycling conditions&lt;/li&gt;&lt;li&gt;Some fallen trees, branches&lt;/li&gt;&lt;li&gt;Outdoor events impacted&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;</description>
+    <instruction></instruction>
+    <web>https://www.met.ie/warnings</web>
+    <contact>forecasts@met.ie</contact>
+    <parameter>
+      <valueName>awareness_type</valueName>
+      <value>1; Wind</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_level</valueName>
+      <value>2; yellow; Moderate</value>
+    </parameter>
+    <area>
+      <areaDesc>Cavan, Dublin, Longford, Louth, Meath, Monaghan, Westmeath</areaDesc>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI07</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI18</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI29</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI19</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI21</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI02</value>
+      </geocode>
+      <geocode>
+        <valueName>FIPS</valueName>
+        <value>EI22</value>
+      </geocode>
+    </area>
+  </info>
+</alert>

@@ -1,0 +1,7 @@
+# Alternative to the systemd unit for Raspberry Pi OS desktop (LXDE/Wayfire):
+# copy to ~/.config/autostart/howth-cg-kiosk.desktop
+[Desktop Entry]
+Type=Application
+Name=Howth CG Kiosk
+Exec=/bin/sh -c 'until curl -fsS http://localhost:8080/healthz >/dev/null; do sleep 2; done; chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --window-size=1920,1080 --force-device-scale-factor=1 --app=http://localhost:8080/'
+X-GNOME-Autostart-enabled=true

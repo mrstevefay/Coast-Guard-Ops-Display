@@ -1,0 +1,140 @@
+# Howth Coast Guard wall dashboard — configuration.
+# Every value here can be overridden with an environment variable; see README
+# ("Configuration"). Secrets (tokens, API keys) should come from env, not here.
+
+station:
+  name: "Irish Coast Guard — Howth"
+  shortName: "HOWTH CG"
+  lat: 53.388
+  lon: -6.065
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  # Where to persist the current mode so a restart mid-callout does not lose it.
+  dataDir: "./data"
+
+callout:
+  # Bearer token required on POST /api/callout and /api/standdown.
+  # Set CALLOUT_TOKEN in the environment instead of here. Empty = endpoints disabled.
+  token: ""
+  # Minutes after the callout before the display returns to standby by itself.
+  autoStanddownMinutes: 180
+
+panels:
+  wind: true
+  tide: true
+  sea: true
+  sun: true
+  ais: true
+  webcam: true
+  muster: true
+  map: true
+  warnings: true
+
+map:
+  # Raster tiles, {z}/{x}/{y} templates. Default is the OSM standard layer
+  # (fine for a single kiosk under the OSM tile usage policy) dimmed for the
+  # dark theme via baseBrightness. CARTO dark now needs an API key.
+  tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+  seamarkTileUrl: "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
+  attribution: "© OpenStreetMap contributors © OpenSeaMap"
+  # 0..1 — how bright the base map is allowed to get (1 = untouched).
+  baseBrightness: 0.62
+  standbyZoom: 11.3
+  calloutZoom: 11.8
+  ringsKm: [5, 10]
+
+providers:
+  metForecast:
+    enabled: true
+    pollIntervalMs: 900000        # 15 min
+    url: "https://openaccess.pf.api.met.ie/metno-wdb2ts/locationforecast"
+    # The HTTPS endpoint 301s to an Azure host whose TLS handshake failed from
+    # the build environment; plain HTTP works. Both are tried in order.
+    fallbackUrl: "http://openaccess.pf.api.met.ie/metno-wdb2ts/locationforecast"
+    hoursAhead: 12
+
+  metObservations:
+    enabled: true
+    pollIntervalMs: 600000        # 10 min
+    url: "https://prodapi.metweb.ie/observations/dublin/today"
+    stationName: "Dublin Airport"
+
+  metWarnings:
+    enabled: true
+    pollIntervalMs: 300000        # 5 min
+    rssUrl: "https://www.met.ie/warningsxml/rss.xml"
+    # EMMA_ID region codes that count as "local". EI07 = Dublin.
+    # Marine warnings are always shown; these decide the `local` flag.
+    localRegionCodes: ["EI07"]
+    # Marine warnings name coastal stretches "from A to B to C". A warning is
+    # local when this headland lies on that stretch (or it says "all coasts" /
+    # "Irish Sea"). See server/src/util/seaAreas.ts for the headland list.
+    marineHeadland: "Howth Head"
+    # Alternatively pin exact marine EMMA_ID codes; non-empty overrides the above.
+    localMarineCodes: []
+
+  tideGauge:
+    enabled: true
+    pollIntervalMs: 300000        # 5 min (gauge reports every 5 min)
+    erddap: "https://erddap.marine.ie/erddap"
+    dataset: "IrishNationalTideGaugeNetwork"
+    stationId: "Howth Water Level 1"
+
+  tidePrediction:
+    enabled: true
+    pollIntervalMs: 1800000       # 30 min
+    erddap: "https://erddap.marine.ie/erddap"
+    highLowDataset: "IMI_TidePrediction_HighLow"
+    curveDataset: "imiTidePrediction"
+    stationId: "Howth"
+    # Range thresholds (m) for the springs/neaps indicator at Howth.
+    springRangeM: 3.3
+    neapRangeM: 2.3
+
+  waveModel:
+    enabled: true
+    pollIntervalMs: 1800000       # 30 min
+    erddap: "https://erddap.marine.ie/erddap"
+    dataset: "IMI_IRISH_SHELF_SWAN_WAVE"
+    # Grid point just off Howth approaches / north Dublin Bay.
+    lat: 53.40
+    lon: -5.95
+    label: "Howth approaches"
+
+  weatherBuoy:
+    enabled: true
+    pollIntervalMs: 900000        # 15 min (hourly data)
+    erddap: "https://erddap.marine.ie/erddap"
+    dataset: "IWBNetwork"
+    stationId: "M2"
+
+  sunMoon:
+    enabled: true
+    pollIntervalMs: 60000         # computed locally; 1 min
+
+  ais:
+    enabled: true
+    pollIntervalMs: 15000         # snapshot interval; stream runs continuously
+    # Get a free key at https://aisstream.io — set AISSTREAM_API_KEY in env.
+    apiKey: ""
+    url: "wss://stream.aisstream.io/v0/stream"
+    # Dublin Bay + Howth approaches. south, west, north, east.
+    bbox: { south: 53.25, west: -6.25, north: 53.50, east: -5.85 }
+    vesselTtlMin: 15
+
+  webcam:
+    enabled: true
+    pollIntervalMs: 60000
+    # No stable public Howth Harbour still-image URL was found (see README).
+    # Set one here (or WEBCAM_IMAGE_URL) and the panel comes alive.
+    imageUrl: ""
+    label: "Howth Harbour"
+    refreshSec: 60
+
+  muster:
+    enabled: true
+    pollIntervalMs: 30000
+    minimumCrew: 4
+    requiredRoles: ["Officer in Charge", "Boat Cox", "Crew", "Crew", "Driver"]

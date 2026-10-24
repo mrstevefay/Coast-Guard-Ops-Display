@@ -1,0 +1,27 @@
+# systemd user unit: ~/.config/systemd/user/howth-cg-kiosk.service
+# Enable with:  systemctl --user enable --now howth-cg-kiosk
+# (and `loginctl enable-linger $USER` so it starts without a login session)
+[Unit]
+Description=Howth CG wall dashboard (Chromium kiosk)
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+ExecStartPre=/bin/sh -c 'until curl -fsS http://localhost:8080/healthz >/dev/null; do sleep 2; done'
+ExecStart=/usr/bin/chromium-browser \
+  --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+  --disable-translate --no-first-run --fast --fast-start \
+  --autoplay-policy=no-user-gesture-required \
+  --check-for-update-interval=31536000 \
+  --window-size=1920,1080 --window-position=0,0 \
+  --force-device-scale-factor=1 \
+  --disable-features=TranslateUI \
+  --overscroll-history-navigation=0 \
+  --app=http://localhost:8080/
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

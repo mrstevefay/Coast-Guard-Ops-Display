@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet type="text/xsl" href="https://cap.met.ie/cap-en-style.xsl"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>2.49.0.1.372.0.261024102815.bda1e247-ac25-4f6e-9cc2-cd33c44ebc3d</identifier>
+  <sender>forecasts@met.ie</sender>
+  <sent>2026-10-24T10:28:15+01:00</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <incidents>Boelo</incidents>
+  <info>
+    <language>en-GB</language>
+    <category>Met</category>
+    <event>Red Gale</event>
+    <responseType>Shelter</responseType>
+    <urgency>Future</urgency>
+    <severity>Extreme</severity>
+    <certainty>Likely</certainty>
+    <effective>2026-10-24T10:28:15+01:00</effective>
+    <onset>2026-10-24T19:00:00+01:00</onset>
+    <expires>2026-10-25T06:00:00+00:00</expires>
+    <senderName>Met Éireann</senderName>
+    <headline>Status Red - Marine Violent Storm warning from Rossan Point to Bloody Foreland to Fair Head</headline>
+    <description>&lt;p&gt;&lt;span data-teams="true"&gt;Storm Boelo: Westerly winds will reach violent storm force 11 at times.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;</description>
+    <instruction></instruction>
+    <web>https://www.met.ie/warnings</web>
+    <contact>forecasts@met.ie</contact>
+    <parameter>
+      <valueName>awareness_type</valueName>
+      <value>1; Wind</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_level</valueName>
+      <value>4; red; Extreme</value>
+    </parameter>
+    <area>
+      <areaDesc>From Rossan Point to Bloody Foreland to Fair Head</areaDesc>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI822</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI821</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI805</value>
+      </geocode>
+    </area>
+  </info>
+</alert>

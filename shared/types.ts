@@ -1,0 +1,333 @@
+/**
+ * DashboardState — the single typed document the server owns and the
+ * frontend renders. Everything the TV shows is derived from this.
+ *
+ * All times are ISO-8601 strings in UTC. The frontend formats them for
+ * Europe/Dublin. All speeds are knots, heights/distances metres, temps °C.
+ */
+
+export type DisplayMode = 'standby' | 'callout';
+
+export interface StationInfo {
+  name: string;
+  shortName: string;
+  lat: number;
+  lon: number;
+}
+
+export interface Incident {
+  id: string;
+  /** Pager / callout text, verbatim. */
+  text: string;
+  receivedAt: string;
+  lat?: number;
+  lon?: number;
+  /** Who/what triggered it: 'api' | 'whatsapp' | 'manual' | ... (Phase 2). */
+  source: string;
+  /** When auto stand-down will fire, if enabled. */
+  autoStanddownAt?: string;
+}
+
+export interface ModeState {
+  mode: DisplayMode;
+  incident?: Incident;
+  /** Last incident, kept after stand-down for the muster/debrief. */
+  lastIncident?: Incident;
+  changedAt: string;
+}
+
+// ---------------------------------------------------------------- weather
+
+export interface WindReading {
+  speedKt: number;
+  gustKt?: number;
+  dirDeg: number;
+  dirName: string; // N, NNE, ...
+  beaufort: number;
+}
+
+export interface HourForecast {
+  /** Start of the hour (UTC ISO). */
+  time: string;
+  wind: WindReading;
+  tempC: number;
+  precipMm: number;
+  precipProbPct?: number;
+  symbol: string; // Met Éireann / met.no symbol id, e.g. "LightRain"
+  pressureHpa?: number;
+  humidityPct?: number;
+  /** Estimated visibility band derived from symbol + humidity; see README. */
+  visibility: VisibilityEstimate;
+}
+
+export type VisibilityBand = 'good' | 'moderate' | 'poor' | 'very-poor' | 'fog';
+
+export interface VisibilityEstimate {
+  band: VisibilityBand;
+  /** Approximate lower/upper bound in nautical miles, for display. */
+  label: string; // e.g. ">5 NM", "2–5 NM", "<1 NM"
+  estimated: true;
+}
+
+export interface ObservedWeather {
+  stationName: string; // e.g. "Dublin Airport"
+  time: string;
+  wind: WindReading;
+  tempC?: number;
+  pressureHpa?: number;
+  humidityPct?: number;
+  rainfallMm?: number;
+  description?: string;
+}
+
+export interface WeatherState {
+  /** Forecast valid for the current hour. */
+  now: HourForecast;
+  /** Next hours after `now`, hourly. */
+  hourly: HourForecast[];
+  modelRun?: string;
+}
+
+// --------------------------------------------------------------- warnings
+
+export type WarningLevel = 'yellow' | 'orange' | 'red' | 'advisory';
+
+export interface WeatherWarning {
+  id: string;
+  level: WarningLevel;
+  /** "Gale", "Small Craft", "Wind", "Rain", ... */
+  type: string;
+  headline: string;
+  description: string;
+  marine: boolean;
+  onset: string;
+  expires: string;
+  issued: string;
+  areas: string[];
+  regionCodes: string[];
+  /** True if the warning covers the configured station regions. */
+  local: boolean;
+}
+
+export interface WarningsState {
+  active: WeatherWarning[];
+  fetchedAt: string;
+}
+
+// ------------------------------------------------------------------- tide
+
+export type TideEventKind = 'HW' | 'LW';
+
+export interface TideEvent {
+  kind: TideEventKind;
+  time: string;
+  /** Height above Chart Datum (LAT), metres. */
+  heightM: number;
+}
+
+export interface TideCurvePoint {
+  time: string;
+  heightM: number;
+}
+
+export type SpringNeap = 'springs' | 'neaps' | 'mid';
+
+export interface TideState {
+  stationId: string;
+  /** Predicted height now (LAT), metres. */
+  predictedNowM?: number;
+  /** Observed water level from the tide gauge (LAT), metres. */
+  observedM?: number;
+  observedAt?: string;
+  /** observed − predicted at the same instant, metres (positive = surge). */
+  surgeM?: number;
+  rising?: boolean;
+  next?: TideEvent;
+  following?: TideEvent;
+  previous?: TideEvent;
+  events: TideEvent[];
+  /** ±6 h around now, ~15-min spacing, LAT. */
+  curve: TideCurvePoint[];
+  rangeM?: number;
+  springNeap?: SpringNeap;
+  /** Offset to add to OD Malin values to get LAT at this station. */
+  odMalinToLatM?: number;
+}
+
+// -------------------------------------------------------------------- sea
+
+export interface SeaStateReading {
+  source: string; // "SWAN model (Howth approaches)" | "M2 buoy"
+  isModel: boolean;
+  time: string;
+  lat: number;
+  lon: number;
+  hsM?: number;
+  periodS?: number;
+  dirDeg?: number;
+  seaTempC?: number;
+  hmaxM?: number;
+  wind?: WindReading;
+  pressureHpa?: number;
+  airTempC?: number;
+}
+
+export interface SeaState {
+  /** Local sea state for Howth approaches (model, until a Dublin Bay buoy feed exists). */
+  local?: SeaStateReading;
+  /** Offshore observation (M2 weather buoy). */
+  offshore?: SeaStateReading;
+}
+
+// -------------------------------------------------------------------- sun
+
+export interface SunMoonState {
+  date: string;
+  sunrise: string;
+  sunset: string;
+  civilDawn: string;
+  civilDusk: string;
+  nauticalDusk: string;
+  isDaylight: boolean;
+  /** Minutes of usable daylight remaining (to civil dusk), 0 if dark. */
+  daylightRemainingMin: number;
+  /** Minutes until sunrise if currently dark. */
+  untilSunriseMin?: number;
+  nextSunrise: string;
+  moonPhase: number; // 0..1
+  moonPhaseName: string;
+  moonIlluminationPct: number;
+}
+
+// -------------------------------------------------------------------- AIS
+
+export interface AisVessel {
+  mmsi: number;
+  name?: string;
+  lat: number;
+  lon: number;
+  sogKt?: number;
+  cogDeg?: number;
+  headingDeg?: number;
+  shipType?: number;
+  lastSeen: string;
+}
+
+export interface AisState {
+  vessels: AisVessel[];
+  count: number;
+  connected: boolean;
+  bbox: { south: number; west: number; north: number; east: number };
+  updatedAt?: string;
+}
+
+// ----------------------------------------------------------------- webcam
+
+export interface WebcamState {
+  configured: boolean;
+  label?: string;
+  /** Still-image URL; frontend appends a cache-buster. */
+  imageUrl?: string;
+  refreshSec: number;
+}
+
+// ----------------------------------------------------------------- muster
+// Phase 2/3 fill these. Phase 1 renders the placeholder.
+
+export type ResponderStatus = 'responding' | 'available' | 'unavailable' | 'on-scene' | 'unknown';
+
+export interface Responder {
+  id: string;
+  name: string;
+  status: ResponderStatus;
+  etaMin?: number;
+  roles: string[];
+  updatedAt: string;
+  source: string; // 'whatsapp' | 'd4h' | ...
+}
+
+export interface MusterState {
+  responders: Responder[];
+  /** role -> responder ids filling it */
+  roles: Record<string, string[]>;
+  minimumCrew: number;
+  /** Role names the station needs covered for a launch. */
+  requiredRoles: string[];
+  source: 'stub' | 'whatsapp' | 'd4h' | 'mixed';
+  updatedAt?: string;
+}
+
+// ----------------------------------------------------------------- health
+
+export type ProviderStatus = 'ok' | 'stale' | 'error' | 'disabled' | 'stub' | 'starting';
+
+export interface ProviderHealth {
+  name: string;
+  status: ProviderStatus;
+  lastAttempt?: string;
+  lastSuccess?: string;
+  lastError?: string;
+  consecutiveFailures: number;
+  nextPollAt?: string;
+  pollIntervalMs: number;
+  /** Human note, e.g. "no API key". */
+  note?: string;
+}
+
+// ---------------------------------------------------------------- panels
+
+export interface PanelToggles {
+  wind: boolean;
+  tide: boolean;
+  sea: boolean;
+  sun: boolean;
+  ais: boolean;
+  webcam: boolean;
+  muster: boolean;
+  map: boolean;
+  warnings: boolean;
+}
+
+export interface MapConfig {
+  tileUrl: string;
+  seamarkTileUrl?: string;
+  attribution: string;
+  /** 0..1 cap on base-map brightness, to keep a light tile set dark-theme friendly. */
+  baseBrightness?: number;
+  standbyZoom: number;
+  calloutZoom: number;
+  ringsKm: number[];
+}
+
+// ------------------------------------------------------------------ state
+
+/** The data half of the state — what providers may return slices of. */
+export interface DashboardData {
+  weather?: WeatherState;
+  /** Nearest synoptic observation (Dublin Airport), own slice so providers stay independent. */
+  observed?: ObservedWeather;
+  warnings?: WarningsState;
+  tide?: TideState;
+  sea?: SeaState;
+  sun?: SunMoonState;
+  ais?: AisState;
+  webcam?: WebcamState;
+  muster?: MusterState;
+}
+
+export interface DashboardState extends DashboardData {
+  generatedAt: string;
+  station: StationInfo;
+  mode: ModeState;
+  providers: Record<string, ProviderHealth>;
+  panels: PanelToggles;
+  map: MapConfig;
+  /** Server build/version, so the kiosk can reload on upgrade. */
+  version: string;
+}
+
+// ------------------------------------------------------------ websocket
+
+export type WsMessage =
+  | { type: 'state'; state: DashboardState }
+  | { type: 'ping'; t: number };

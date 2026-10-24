@@ -1,0 +1,84 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Met Éireann Warnings</title>
+    <atom:link rel="self" type="application/rss+xml" href="www.met.ie/warningsxml/rss.xml" />
+    <description>Warnings issued by Met Éireann. Clicking the links loads the CAP (Common Alerting
+Protocol) XML file.
+Note: Moderate means ‘Status Yellow’, Severe means ‘Status Orange’ and extreme means ‘Status
+Red’</description>
+    <copyright>Public Domain</copyright>
+    <item>
+      <title>Yellow Gale</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261022143209.ed9ff7c4-77f6-4e00-a2ff-17f9e665bc9d.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Southerly winds veering westerly will reach gale force 8 or higher at times.&amp;nbsp;&lt;/p&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261022143209.ed9ff7c4-77f6-4e00-a2ff-17f9e665bc9d.xml</guid>
+      <pubDate>Thu, 22 Oct 2026 06:44:39 GMT</pubDate>
+    </item>
+    <item>
+      <title>Orange Gale</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261022141949.666aed2b-d1e8-485c-9817-7af4c298c2a2.xml</link>
+      <description>&lt;p&gt;Storm Boelo: West to northwest winds will reach storm force 10 at times.&lt;/p&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261022141949.666aed2b-d1e8-485c-9817-7af4c298c2a2.xml</guid>
+      <pubDate>Thu, 22 Oct 2026 14:19:49 GMT</pubDate>
+    </item>
+    <item>
+      <title>Small Craft</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261022163343.a1c0503d-4fe3-420e-8b70-541618d34ba3.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Southerly winds veering westerly will reach force 6 or higher at times.&amp;nbsp;&lt;/p&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261022163343.a1c0503d-4fe3-420e-8b70-541618d34ba3.xml</guid>
+      <pubDate>Thu, 22 Oct 2026 14:38:11 GMT</pubDate>
+    </item>
+    <item>
+      <title>Yellow Wind</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261023091139.14f6d8ac-abbc-49c9-912b-06b9e68dcffb.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Very strong southwest winds will veer westerly with severe gusts and coastal gales.&amp;nbsp;&lt;/p&gt;&lt;p&gt;Be aware of potential impacts:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Debris, loose objects displaced&lt;/li&gt;&lt;li&gt;Difficult driving and cycling conditions&lt;/li&gt;&lt;li&gt;Large coastal waves&lt;/li&gt;&lt;li&gt;Some fallen trees, branches&lt;/li&gt;&lt;li&gt;Outdoor events impacted&lt;/li&gt;&lt;/ul&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261023091139.14f6d8ac-abbc-49c9-912b-06b9e68dcffb.xml</guid>
+      <pubDate>Fri, 23 Oct 2026 09:11:39 GMT</pubDate>
+    </item>
+    <item>
+      <title>Yellow Wind</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261023091842.e947eb0b-d1f7-4798-a72f-dbea8742cce0.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Very strong southwest winds will veer westerly with severe gusts and coastal gales.&lt;/p&gt;&lt;p&gt;Be aware of potential impacts:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Debris, loose objects displaced&lt;/li&gt;&lt;li&gt;Difficult driving and cycling conditions&lt;/li&gt;&lt;li&gt;Large coastal waves&lt;/li&gt;&lt;li&gt;Some fallen trees, branches&lt;/li&gt;&lt;li&gt;Outdoor events impacted&lt;/li&gt;&lt;/ul&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261023091842.e947eb0b-d1f7-4798-a72f-dbea8742cce0.xml</guid>
+      <pubDate>Fri, 23 Oct 2026 09:14:07 GMT</pubDate>
+    </item>
+    <item>
+      <title>Orange Wind</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261023102509.d52a83e2-3993-44cf-8372-64a9fdbd114d.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Gale force westerly winds with severe and damaging gusts.&lt;/p&gt;&lt;p&gt;Prepare for impacts:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Damage to already weakened structures&lt;/li&gt;&lt;li&gt;Damage to power lines, power outages&lt;/li&gt;&lt;li&gt;Disruption and delays to public transport likely (air, rail, bus, ferry)&lt;/li&gt;&lt;li&gt;Fallen trees&lt;/li&gt;&lt;li&gt;Large coastal waves&lt;/li&gt;&lt;li&gt;Loose objects displaced&lt;/li&gt;&lt;li&gt;Coastal flooding where winds onshore&lt;/li&gt;&lt;li&gt;Very difficult travelling conditions, dangerous conditions at sea&lt;/li&gt;&lt;/ul&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261023102509.d52a83e2-3993-44cf-8372-64a9fdbd114d.xml</guid>
+      <pubDate>Fri, 23 Oct 2026 09:22:16 GMT</pubDate>
+    </item>
+    <item>
+      <title>Yellow Wind</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261024081905.50f22198-3eca-4d01-a61d-438433469359.xml</link>
+      <description>&lt;p&gt;Storm Boelo: Very strong southwesterly winds will veer westerly with severe gusts.&lt;/p&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;&lt;p&gt;Be aware of potential impacts:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Debris, loose objects displaced&lt;/li&gt;&lt;li&gt;Difficult driving and cycling conditions&lt;/li&gt;&lt;li&gt;Some fallen trees, branches&lt;/li&gt;&lt;li&gt;Outdoor events impacted&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261024081905.50f22198-3eca-4d01-a61d-438433469359.xml</guid>
+      <pubDate>Fri, 23 Oct 2026 20:59:15 GMT</pubDate>
+    </item>
+    <item>
+      <title>Red Gale</title>
+      <link>https://cap.met.ie/2.49.0.1.372.0.261024102815.bda1e247-ac25-4f6e-9cc2-cd33c44ebc3d.xml</link>
+      <description>&lt;p&gt;&lt;span data-teams="true"&gt;Storm Boelo: Westerly winds will reach violent storm force 11 at times.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;</description>
+      <author>forecasts@met.ie (Met Éireann)</author>
+      <category>Weather</category>
+      <guid>https://cap.met.ie/2.49.0.1.372.0.261024102815.bda1e247-ac25-4f6e-9cc2-cd33c44ebc3d.xml</guid>
+      <pubDate>Sat, 24 Oct 2026 10:28:15 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,32 @@
+{
+  "table": {
+    "columnNames": ["time", "station_id", "Water_Level_LAT", "Water_Level_OD_Malin", "QC_Flag"],
+    "columnTypes": ["String", "String", "float", "float", "int"],
+    "columnUnits": ["UTC", null, "metres", "metres", null],
+    "rows": [
+      ["2026-10-24T12:20:00Z", "Howth Water Level 1", 2.981, 0.42, 0],
+      ["2026-10-24T12:25:00Z", "Howth Water Level 1", 2.928, 0.367, 0],
+      ["2026-10-24T12:30:00Z", "Howth Water Level 1", 2.852, 0.291, 0],
+      ["2026-10-24T12:35:00Z", "Howth Water Level 1", 2.798, 0.237, 0],
+      ["2026-10-24T12:40:00Z", "Howth Water Level 1", 2.771, 0.21, 0],
+      ["2026-10-24T12:45:00Z", "Howth Water Level 1", 2.701, 0.14, 0],
+      ["2026-10-24T12:50:00Z", "Howth Water Level 1", 2.589, 0.028, 0],
+      ["2026-10-24T12:55:00Z", "Howth Water Level 1", 2.579, 0.018, 0],
+      ["2026-10-24T13:00:00Z", "Howth Water Level 1", 2.491, -0.07, 0],
+      ["2026-10-24T13:05:00Z", "Howth Water Level 1", 2.424, -0.137, 0],
+      ["2026-10-24T13:10:00Z", "Howth Water Level 1", 2.36, -0.201, 0],
+      ["2026-10-24T13:15:00Z", "Howth Water Level 1", 2.294, -0.267, 0],
+      ["2026-10-24T13:20:00Z", "Howth Water Level 1", 2.229, -0.332, 0],
+      ["2026-10-24T13:25:00Z", "Howth Water Level 1", 2.173, -0.388, 0],
+      ["2026-10-24T13:30:00Z", "Howth Water Level 1", 2.107, -0.454, 0],
+      ["2026-10-24T13:35:00Z", "Howth Water Level 1", 2.062, -0.499, 0],
+      ["2026-10-24T13:40:00Z", "Howth Water Level 1", 2.018, -0.543, 0],
+      ["2026-10-24T13:45:00Z", "Howth Water Level 1", 1.906, -0.655, 0],
+      ["2026-10-24T13:50:00Z", "Howth Water Level 1", 1.856, -0.705, 0],
+      ["2026-10-24T13:55:00Z", "Howth Water Level 1", 1.852, -0.709, 0],
+      ["2026-10-24T14:00:00Z", "Howth Water Level 1", 1.746, -0.815, 0],
+      ["2026-10-24T14:05:00Z", "Howth Water Level 1", 1.745, -0.816, 0],
+      ["2026-10-24T14:10:00Z", "Howth Water Level 1", 1.671, -0.89, 0]
+    ]
+  }
+}

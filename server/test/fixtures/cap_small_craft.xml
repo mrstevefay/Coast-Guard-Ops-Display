@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<?xml-stylesheet type="text/xsl" href="https://cap.met.ie/cap-en-style.xsl"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>2.49.0.1.372.0.261022163343.a1c0503d-4fe3-420e-8b70-541618d34ba3</identifier>
+  <sender>forecasts@met.ie</sender>
+  <sent>2026-10-22T16:33:43+01:00</sent>
+  <status>Actual</status>
+  <msgType>Update</msgType>
+  <scope>Public</scope>
+  <incidents>Boelo</incidents>
+  <references>forecasts@met.ie,2.49.0.1.372.0.261022143811.f8fb744b-d38b-428b-a0df-bf78a3ecfe8d,0001-01-01T00:00:00-00:01</references>
+  <info>
+    <language>en-GB</language>
+    <category>Met</category>
+    <event>Small Craft</event>
+    <responseType>Monitor</responseType>
+    <urgency>Future</urgency>
+    <severity>Moderate</severity>
+    <certainty>Likely</certainty>
+    <effective>2026-10-22T14:38:11+01:00</effective>
+    <onset>2026-10-24T00:00:00+01:00</onset>
+    <expires>2026-10-26T04:00:00+00:00</expires>
+    <senderName>Met Éireann</senderName>
+    <headline>Small Craft warning for all coasts of Ireland</headline>
+    <description>&lt;p&gt;Storm Boelo: Southerly winds veering westerly will reach force 6 or higher at times.&amp;nbsp;&lt;/p&gt;</description>
+    <instruction></instruction>
+    <web>https://www.met.ie/warnings</web>
+    <contact>forecasts@met.ie</contact>
+    <parameter>
+      <valueName>awareness_type</valueName>
+      <value>1; Wind</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_level</valueName>
+      <value>2; yellow; Moderate</value>
+    </parameter>
+    <area>
+      <areaDesc>All coasts of Ireland</areaDesc>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI811</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI822</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI817</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI806</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI812</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI819</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI820</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI821</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI807</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI808</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI810</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI805</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI813</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI814</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI815</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI816</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI818</value>
+      </geocode>
+      <geocode>
+        <valueName>EMMA_ID</valueName>
+        <value>EI809</value>
+      </geocode>
+    </area>
+  </info>
+</alert>
