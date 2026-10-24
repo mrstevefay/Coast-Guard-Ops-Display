@@ -51,6 +51,7 @@ export function aisProvider(cfg: AppConfig): Provider {
   let reconnectTimer: NodeJS.Timeout | undefined;
   let lastMessageAt: string | undefined;
   let ctxRef: ProviderContext | undefined;
+  let startedAt = 0;
 
   function connect() {
     if (stopped || !hasKey || !ctxRef) return;
@@ -105,6 +106,7 @@ export function aisProvider(cfg: AppConfig): Provider {
     start(ctx) {
       ctxRef = ctx;
       stopped = false;
+      startedAt = Date.now();
       connect();
     },
     stop() {
@@ -116,12 +118,14 @@ export function aisProvider(cfg: AppConfig): Provider {
       expireVessels(table, c.vesselTtlMin * 60_000);
       const vessels = [...table.values()].sort((a, b) => a.mmsi - b.mmsi);
       const ais: AisState = { vessels, count: vessels.length, connected, bbox: c.bbox, updatedAt: lastMessageAt };
-      if (hasKey && !connected && table.size === 0) throw new Error('aisstream not connected');
+      // Give the stream 60 s to come up before the first poll counts as a failure.
+      if (hasKey && !connected && table.size === 0 && Date.now() - startedAt > 60_000) throw new Error('aisstream not connected');
       return { ais };
     },
     health(): Partial<ProviderHealth> {
       if (!hasKey) return {};
-      return connected ? {} : { status: lastMessageAt ? 'stale' : 'error', lastError: 'aisstream not connected' };
+      if (connected || Date.now() - startedAt < 60_000) return {};
+      return { status: lastMessageAt ? 'stale' : 'error', lastError: 'aisstream not connected' };
     },
   };
 }

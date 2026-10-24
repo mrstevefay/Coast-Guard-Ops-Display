@@ -39,7 +39,7 @@ Each endpoint was exercised live before code was written against it.
 | 2 | Dublin Bay buoy | ❌ not on ERDDAP | No Dublin Bay wave buoy dataset exists on erddap.marine.ie (searched "dublin", "buoy", "wave", listed all wave-network stations). **Substituted** with the Marine Institute Irish Shelf SWAN wave model sampled at 53.40 N 5.95 W, labelled "SWAN model" on screen. If a Dublin Port Company feed turns up, add a provider writing `sea.local`. |
 | 2 | M2 weather buoy — ERDDAP `IWBNetwork` | ✅ works | Hourly; wind already in knots, Hs in m, sea temp. |
 | 3 | Sun/moon | ✅ local | `suncalc`. |
-| 4 | AIS — aisstream.io | ⚠️ needs key | Site reachable, protocol implemented (bounding box Dublin Bay/Howth), **not verified live** — no key was available. Set `AISSTREAM_API_KEY`; until then the panel is a placeholder. |
+| 4 | AIS — aisstream.io | ✅ works (key required) | Verified live with a free key: WebSocket stream bounded to Dublin Bay/Howth, vessels appear within a minute (ferries, ILV Granuaile, naval). Set `AISSTREAM_API_KEY`; without it the panel is a placeholder. |
 | 5 | Howth Harbour webcam | ❌ stubbed | No stable, embeddable still-image URL found (only aggregator pages on windy/yr, and Afloat's Sandycove stream which looks *at* Howth from across the bay). Set `WEBCAM_IMAGE_URL` to any JPEG/PNG still and the panel works. |
 | 6 | Map tiles | ✅ works | OSM standard tiles (dimmed) + OpenSeaMap seamarks. CARTO dark tiles now require an API key and were dropped. One kiosk is within the OSM tile usage policy; for a fleet, self-host tiles. |
 
