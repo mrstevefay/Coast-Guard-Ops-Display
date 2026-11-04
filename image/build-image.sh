@@ -86,10 +86,9 @@ chr() { chroot "$ROOT" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbi
 log "installing packages (chromium + cage under emulation: this takes a while)"
 chr apt-get update
 chr apt-get install -y --no-install-recommends \
-  cage chromium libgl1-mesa-dri mesa-vulkan-drivers \
+  cage chromium libgl1-mesa-dri \
   fonts-dejavu fonts-liberation2 curl ca-certificates xz-utils \
-  libinput10 libdrm2 dbus-user-session policykit-1 \
-  libegl1 libgles2 libnss3 libxkbcommon0 libgbm1
+  dbus-user-session libegl1 libgles2
 chr apt-get clean
 rm -rf "$ROOT/var/lib/apt/lists/"*
 
