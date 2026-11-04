@@ -1,0 +1,49 @@
+name: pi-image
+# Builds a flash-and-boot Raspberry Pi SD card image (.img.xz).
+# Run manually from the Actions tab, or push a tag like v0.1.0 to also attach it to a release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - name: Build app
+        run: |
+          npm ci
+          npm run build
+          npm test
+          rm -rf node_modules web/node_modules server/node_modules
+          npm ci --omit=dev -w server
+      - name: Host tools (qemu for the arm64 chroot)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support xz-utils parted e2fsprogs curl
+          sudo update-binfmts --enable qemu-aarch64 || true
+      - name: Build image
+        env:
+          WORK: /mnt/howth-cg-work
+        run: |
+          sudo mkdir -p "$WORK" out
+          sudo -E image/build-image.sh "$PWD" "$PWD/out/howth-cg-dashboard-pi.img"
+          sudo chown -R "$USER" out
+          sha256sum out/*.img.xz | tee out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: howth-cg-dashboard-pi-image
+          path: out/*
+          compression-level: 0
+          retention-days: 30
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*

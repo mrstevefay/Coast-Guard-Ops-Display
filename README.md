@@ -166,6 +166,29 @@ pruned to the current feed).
 4. Register it in `server/src/providers/index.ts`.
 5. Drop a captured payload in `server/test/fixtures/` and add a `*.test.ts`.
 
+## SD card image (flash and boot)
+
+`image/build-image.sh` turns stock Raspberry Pi OS Lite (arm64) into an appliance image:
+Node 20, Chromium in a Wayland kiosk (`cage`), the dashboard as two systemd services,
+1080p forced on HDMI, console blanking off, SSH on, hostname `howth-cg`. No Docker.
+It needs root, loop devices and `qemu-user-static`, so it runs in GitHub Actions:
+
+1. Actions → **pi-image** → *Run workflow* (or push a tag `v0.1.0`, which also attaches
+   the image to a release). ~30–40 min. Download `howth-cg-dashboard-pi.img.xz`.
+2. Flash with Raspberry Pi Imager (*Use custom*). Imager's OS customisation (Wi-Fi,
+   hostname, user) works on top of this image; with Ethernet you can skip it.
+3. On the card's `bootfs` partition edit `howth-cg.env` (callout token, AIS key, webcam
+   URL). Optionally drop a `howth-cg.yaml` there to replace the baked-in `config.yaml`.
+4. Boot. First boot expands the filesystem (~1 min); the display comes up by itself.
+
+Default login `cg` / `howthcg` over SSH — change it (`passwd`) or set your own in Imager.
+Admin: `sudo journalctl -u howth-cg-dashboard -f`, `sudo systemctl restart howth-cg-kiosk`,
+`curl localhost:8080/healthz`. Layout of what the script installs is in `image/rootfs/`.
+
+Tested on: the image build in CI only so far — see the workflow run for the SHA256.
+First boot on real Pi 5 hardware still needs a check (cage/Chromium on the Pi 5 KMS
+driver is the usual thing to verify).
+
 ## Running the kiosk on a Raspberry Pi 5
 
 1. Raspberry Pi OS (64-bit, desktop). Install Docker (`curl -fsSL https://get.docker.com | sh`),

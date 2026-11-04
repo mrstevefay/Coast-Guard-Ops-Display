@@ -1,0 +1,32 @@
+[Unit]
+Description=Howth CG wall dashboard server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=howthcg
+Group=howthcg
+WorkingDirectory=/opt/howth-cg
+# Secrets and overrides live on the FAT boot partition so they can be edited
+# from any laptop with the SD card plugged in. See /boot/firmware/howth-cg.env
+EnvironmentFile=-/boot/firmware/howth-cg.env
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=HOST=0.0.0.0
+Environment=DATA_DIR=/var/lib/howth-cg
+Environment=WEB_DIST=/opt/howth-cg/web/dist
+Environment=TZ=Europe/Dublin
+ExecStart=/opt/howth-cg/bin/start.sh
+Restart=always
+RestartSec=5
+# Memory hygiene for weeks of uptime
+MemoryMax=512M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/howth-cg
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
