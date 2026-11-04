@@ -60,8 +60,16 @@ BOOT="$ROOT/boot/firmware"
 # ---------------------------------------------------------------- chroot prep
 log "preparing chroot"
 ARCH_HOST=$(uname -m)
+QEMU_COPIED=
 if [ "$ARCH_HOST" != "aarch64" ]; then
-  cp "$(command -v qemu-aarch64-static)" "$ROOT/usr/bin/"
+  # Newer distros register qemu with the binfmt "F" flag (binary pre-opened), in
+  # which case nothing needs copying into the chroot. Otherwise copy the static one.
+  if ! grep -qs '^flags:.*F' /proc/sys/fs/binfmt_misc/qemu-aarch64; then
+    QEMU_BIN=$(command -v qemu-aarch64-static || command -v qemu-aarch64 || true)
+    [ -n "$QEMU_BIN" ] || { echo "no qemu-aarch64 user emulator found"; exit 1; }
+    cp "$QEMU_BIN" "$ROOT/usr/bin/qemu-aarch64-static"
+    QEMU_COPIED=1
+  fi
 fi
 # libarmmem preload breaks emulated chroots; park it.
 [ -f "$ROOT/etc/ld.so.preload" ] && mv "$ROOT/etc/ld.so.preload" "$ROOT/etc/ld.so.preload.disabled"
@@ -145,7 +153,7 @@ ln -sf /usr/share/zoneinfo/Europe/Dublin "$ROOT/etc/localtime"
 # ---------------------------------------------------------------- finish
 log "cleaning up chroot"
 [ -f "$ROOT/etc/ld.so.preload.disabled" ] && mv "$ROOT/etc/ld.so.preload.disabled" "$ROOT/etc/ld.so.preload"
-[ "$ARCH_HOST" != "aarch64" ] && rm -f "$ROOT/usr/bin/qemu-aarch64-static"
+[ -n "$QEMU_COPIED" ] && rm -f "$ROOT/usr/bin/qemu-aarch64-static"
 rm -f "$ROOT/etc/resolv.conf"; [ -e "$WORK/resolv.conf.orig" ] && cp -a "$WORK/resolv.conf.orig" "$ROOT/etc/resolv.conf"
 sync
 for m in dev/pts dev proc sys run boot/firmware; do umount -l "$ROOT/$m"; done

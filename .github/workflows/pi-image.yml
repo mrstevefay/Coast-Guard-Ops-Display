@@ -5,10 +5,13 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: ['**']
+    paths: ['image/**', '.github/workflows/pi-image.yml']
 
 jobs:
   build-image:
-    runs-on: ubuntu-latest
+    # 24.04: qemu-user-static is a real package there (virtual on 26.04)
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: write
@@ -26,8 +29,11 @@ jobs:
       - name: Host tools (qemu for the arm64 chroot)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support xz-utils parted e2fsprogs curl
+          sudo apt-get install -y --no-install-recommends xz-utils parted e2fsprogs curl openssl
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support \
+            || sudo apt-get install -y --no-install-recommends qemu-user-binfmt
           sudo update-binfmts --enable qemu-aarch64 || true
+          ls -l /proc/sys/fs/binfmt_misc/ | head; cat /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null | head -3 || true
       - name: Build image
         env:
           WORK: /mnt/howth-cg-work
