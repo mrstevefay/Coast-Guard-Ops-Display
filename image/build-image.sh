@@ -100,7 +100,7 @@ rm -f "$ROOT/usr/local/bin/npm" "$ROOT/usr/local/bin/npx" "$ROOT/usr/local/bin/c
 
 # ---------------------------------------------------------------- users
 log "creating users"
-chr groupadd -f howthcg
+for g in howthcg video render input audio; do chr groupadd -f "$g"; done
 chr id howthcg >/dev/null 2>&1 || chr useradd -r -g howthcg -d /var/lib/howth-cg -s /usr/sbin/nologin howthcg
 chr id kiosk >/dev/null 2>&1 || chr useradd -m -d /home/kiosk -s /bin/bash -G video,render,input,audio kiosk
 mkdir -p "$ROOT/var/lib/howth-cg" && chr chown howthcg:howthcg /var/lib/howth-cg
@@ -115,6 +115,7 @@ cp -r "$APP_SRC/web/dist" "$APP/web/dist"
 cp -r "$APP_SRC/node_modules" "$APP/node_modules"
 [ -d "$APP_SRC/server/node_modules" ] && cp -r "$APP_SRC/server/node_modules" "$APP/server/node_modules"
 cp -r "$HERE/rootfs/." "$ROOT/"
+mkdir -p "$ROOT/etc/howth-cg"
 cp "$APP_SRC/config.yaml" "$ROOT/etc/howth-cg/config.yaml"
 chmod +x "$APP"/bin/*.sh
 chr chown -R root:root /opt/howth-cg
