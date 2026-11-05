@@ -9,5 +9,9 @@ network:
       dhcp4: true
       optional: true
       access-points:
-        "YOUR-SSID":
-          password: "YOUR-PASSWORD"
+        "STATION-SSID":
+          password: "STATION-PASSWORD"
+          priority: 10
+        # Optional second network, e.g. for bench testing at home.
+        "HOME-SSID":
+          password: "HOME-PASSWORD"
