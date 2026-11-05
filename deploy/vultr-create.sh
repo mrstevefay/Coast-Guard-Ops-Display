@@ -10,7 +10,8 @@
 #
 # Required environment:
 #   VULTR_API_KEY      Vultr API key (Account -> API). Never commit it.
-#   SSH_PUBKEY_FILE    public key for the deploy user (default ~/.ssh/id_ed25519.pub)
+#   SSH_PUBKEY_FILE    public key for the deploy user (default ~/.ssh/id_ed25519.pub), or
+#   VULTR_SSH_KEY_ID   id of a key already in the account (then SSH_PUBKEY_FILE is ignored)
 # Optional:
 #   ADMIN_IP           CIDR allowed to SSH (default: your current public IPv4 /32)
 #   REGION             default lhr (London; nearest Vultr region to Dublin)
@@ -31,7 +32,7 @@ API="https://api.vultr.com/v2"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 for t in curl jq; do command -v "$t" >/dev/null || { echo "need $t" >&2; exit 1; }; done
-[ -r "$SSH_PUBKEY_FILE" ] || { echo "no public key at $SSH_PUBKEY_FILE (set SSH_PUBKEY_FILE)" >&2; exit 1; }
+[ -n "${VULTR_SSH_KEY_ID:-}" ] || [ -r "$SSH_PUBKEY_FILE" ] || { echo "no public key at $SSH_PUBKEY_FILE (set SSH_PUBKEY_FILE or VULTR_SSH_KEY_ID)" >&2; exit 1; }
 
 api() { # api METHOD PATH [JSON]
   local m=$1 p=$2 d=${3:-}
@@ -44,7 +45,11 @@ api() { # api METHOD PATH [JSON]
 }
 
 ADMIN_IP="${ADMIN_IP:-$(curl -fsS -4 https://api.ipify.org)/32}"
-PUBKEY="$(tr -d '\n' < "$SSH_PUBKEY_FILE")"
+if [ -n "${VULTR_SSH_KEY_ID:-}" ]; then
+  PUBKEY="$(api GET "/ssh-keys/$VULTR_SSH_KEY_ID" | jq -r .ssh_key.ssh_key)"
+else
+  PUBKEY="$(tr -d '\n' < "$SSH_PUBKEY_FILE")"
+fi
 
 echo "region=$REGION plan=$PLAN label=$LABEL ssh-from=$ADMIN_IP"
 
@@ -53,7 +58,7 @@ OS_ID=$(api GET "/os?per_page=500" | jq -r --arg n "$OS_NAME" '.os[] | select(.n
 [ -n "$OS_ID" ] || { echo "OS '$OS_NAME' not found" >&2; exit 1; }
 
 # --- SSH key ------------------------------------------------------------------------
-KEY_ID=$(api GET "/ssh-keys?per_page=500" | jq -r --arg n "$LABEL" '.ssh_keys[] | select(.name==$n) | .id')
+KEY_ID="${VULTR_SSH_KEY_ID:-$(api GET "/ssh-keys?per_page=500" | jq -r --arg n "$LABEL" '.ssh_keys[] | select(.name==$n) | .id')}"
 if [ -z "$KEY_ID" ]; then
   KEY_ID=$(api POST /ssh-keys "$(jq -n --arg n "$LABEL" --arg k "$PUBKEY" '{name:$n, ssh_key:$k}')" | jq -r .ssh_key.id)
   echo "ssh key created: $KEY_ID"
