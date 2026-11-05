@@ -174,4 +174,25 @@ export const MIGRATIONS: string[] = [
     updated_by INTEGER
   );
   `,
+  // 3 — history: every response status change, and conditions at incident start/end
+  `
+  CREATE TABLE response_events (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    eta_min INTEGER,
+    at TEXT NOT NULL
+  );
+  CREATE INDEX response_events_incident ON response_events(incident_id, at);
+
+  CREATE TABLE incident_conditions (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('start','end')),
+    at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX incident_conditions_incident ON incident_conditions(incident_id, at);
+  `,
 ];

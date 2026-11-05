@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **History and replay** (console → *History*): every past tasking and callout with who was on
+  which team, targets, the planning point and conditions; a map replay from start to finish
+  (play/pause, 10×–1200×, scrub) showing positions, tracks and coverage as they were; a
+  timeline of responses, team and target changes. `GET /api/incidents/:id/replay`.
+- **End-of-mission report** (`GET /api/incidents/:id/report.html`, *Report* / *Download* /
+  *Email HQ* in History): response time, time to scene and time on scene per responder; teams
+  with members, sweep width, time searching, track length and estimated area swept; targets;
+  weather, visibility, sea state, tide and daylight at start and end; warnings; timeline; a
+  schematic map. Printable (browser → PDF). JSON at `/report`.
+- Every response status change is now recorded (`response_events`) and conditions are
+  snapshotted when an incident opens and closes (`incident_conditions`); schema migration 3.
 - **Taskings**: the console's *New tasking* opens a search (responders, teams, targets,
   tracking) without raising a callout: the TV stays in standby with a TASKING tag and nobody is
   paged. Tick *Also raise a callout* for the old behaviour; a pager callout supersedes an open

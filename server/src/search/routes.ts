@@ -30,7 +30,29 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
   app.get('/api/search', { preHandler: anyUser }, async () => search.snapshot());
 
   // ---------------------------------------------------------- incidents
-  app.get<{ Querystring: { limit?: string } }>('/api/incidents', { preHandler: manager }, async (req) => ({ incidents: search.listIncidents(req.query.limit ? Number(req.query.limit) : 50) }));
+  // ---------------------------------------------------------- history
+  app.get<{ Querystring: { limit?: string } }>('/api/incidents', { preHandler: manager }, async (req) => ({ incidents: search.history(req.query.limit ? Number(req.query.limit) : 100) }));
+
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/replay', { preHandler: manager }, async (req, reply) => {
+    const r = search.replay(req.params.id);
+    return r ?? bad(reply, 'incident not found', 404);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/report', { preHandler: manager }, async (req, reply) => {
+    const r = search.report(req.params.id);
+    return r ? { report: r.report } : bad(reply, 'incident not found', 404);
+  });
+
+  /** Printable end-of-mission report. `?download=1` sends it as a file for mailing to HQ. */
+  app.get<{ Params: { id: string }; Querystring: { download?: string } }>('/api/incidents/:id/report.html', { preHandler: manager }, async (req, reply) => {
+    const html = search.reportHtml(req.params.id);
+    if (!html) return bad(reply, 'incident not found', 404);
+    const inc = search.incidentById(req.params.id)!;
+    const name = `${inc.kind}-report-${inc.started_at.slice(0, 16).replace(/[:T]/g, '-')}.html`;
+    audit.log(req.principal, req.ip, 'report.generated', { type: 'incident', id: req.params.id }, { download: Boolean(req.query.download) });
+    reply.header('cache-control', 'private, no-store').header('content-disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${name}"`).type('text/html; charset=utf-8');
+    return html;
+  });
 
   /**
    * Start a search. Default is a *tasking*: the search opens (teams, targets, tracking,

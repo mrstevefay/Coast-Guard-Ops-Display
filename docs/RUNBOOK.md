@@ -60,6 +60,7 @@ hosted server (`POST https://ops.<domain>/api/callout` with the bridge token); t
 | Backup now | `/sm/` → Settings → Backups & retention → *Back up now* (or `POST /api/admin/backup` as admin); the 03:30 nightly runs anyway |
 | List backups | Settings → Backups & retention, `GET /api/admin/backups` (admin), or `docker compose exec app ls -la /app/data/backups` |
 | Audit log | Settings → Audit log (who changed what; filter by range and text) |
+| End-of-mission report | `/sm/` → History → incident → *Report* (print to PDF) or *Download* (.html) and attach to the HQ email; *Email HQ* pre-fills the summary |
 | Feed health | Settings → System status (per-feed status, last success, errors) or `/healthz` |
 | AIS key, webcam URL, Dublin Bay key | Settings → Data feeds (takes effect immediately; overrides `.env` / `config.yaml`) |
 | Restore | `docker compose stop app`; `docker run --rm -v howth-cg_app-data:/d alpine sh -c 'cp /d/backups/ops-<stamp>.db /d/ops.db && rm -f /d/ops.db-wal /d/ops.db-shm'`; `docker compose start app` |
