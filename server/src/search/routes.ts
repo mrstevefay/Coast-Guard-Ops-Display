@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ResponseStatus, TargetKind, TargetStatus, TeamStatus } from '../../../shared/types.js';
 import type { Audit } from '../audit.js';
@@ -5,6 +6,7 @@ import { requireAuth, type AuthCtx } from '../auth/middleware.js';
 import type { CalloutManager } from '../callout.js';
 import type { Db } from '../db/index.js';
 import type { SearchService } from './service.js';
+import { PHOTO_MAX_BYTES, type SubjectPatch } from './subject.js';
 import { tracksFor } from './tracks.js';
 
 export interface SearchRoutesDeps extends AuthCtx {
@@ -30,11 +32,22 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
   // ---------------------------------------------------------- incidents
   app.get<{ Querystring: { limit?: string } }>('/api/incidents', { preHandler: manager }, async (req) => ({ incidents: search.listIncidents(req.query.limit ? Number(req.query.limit) : 50) }));
 
-  app.post<{ Body: { text?: string; lat?: number; lon?: number } }>('/api/incidents', { preHandler: manager }, async (req, reply) => {
+  /**
+   * Start a search. Default is a *tasking*: the search opens (teams, targets, tracking,
+   * responders) but the display stays in standby and nobody is paged. `callout: true`
+   * raises a callout instead (TV to callout mode, crew app alert), as the pager bridge does.
+   */
+  app.post<{ Body: { text?: string; lat?: number; lon?: number; callout?: boolean } }>('/api/incidents', { preHandler: manager }, async (req, reply) => {
     try {
-      const mode = d.callout.callout({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, source: 'app' });
-      audit.log(req.principal, req.ip, 'incident.started', { type: 'incident', id: mode.incident!.id });
-      return { incident: search.openIncident() ? search.snapshot().incident : undefined, mode };
+      const p = req.principal!;
+      if (req.body?.callout) {
+        const mode = d.callout.callout({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, source: 'app' });
+        audit.log(p, req.ip, 'incident.started', { type: 'incident', id: mode.incident!.id }, { kind: 'callout' });
+        return { incident: search.openIncident() ? search.snapshot().incident : undefined, mode };
+      }
+      const incident = search.startTasking({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, createdBy: p.kind === 'user' ? p.userId : undefined });
+      audit.log(p, req.ip, 'incident.started', { type: 'incident', id: incident.id }, { kind: 'tasking' });
+      return { incident };
     } catch (e) {
       return bad(reply, e);
     }
@@ -43,9 +56,83 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
   app.post<{ Params: { id: string } }>('/api/incidents/:id/close', { preHandler: manager }, async (req, reply) => {
     const open = search.openIncident();
     if (!open || open.id !== req.params.id) return bad(reply, 'incident is not open', 409);
-    d.callout.standdown('app');
-    audit.log(req.principal, req.ip, 'incident.closed', { type: 'incident', id: req.params.id });
+    if (open.kind === 'tasking') search.closeTasking(open.id);
+    else d.callout.standdown('app');
+    audit.log(req.principal, req.ip, 'incident.closed', { type: 'incident', id: req.params.id }, { kind: open.kind });
     return { ok: true };
+  });
+
+  /** Search planning point (IPP). `ipp: null` clears it. */
+  app.patch<{ Params: { id: string }; Body: { ipp?: { lat?: number; lon?: number; label?: string } | null } }>('/api/incidents/:id', { preHandler: manager }, async (req, reply) => {
+    try {
+      const b = req.body ?? {};
+      if (b.ipp === undefined) return bad(reply, 'nothing to update');
+      const incident = search.setPlanningPoint(req.params.id, b.ipp ? { lat: Number(b.ipp.lat), lon: Number(b.ipp.lon), label: b.ipp.label } : null);
+      audit.log(req.principal, req.ip, 'incident.ipp', { type: 'incident', id: req.params.id }, b.ipp ? { lat: incident.ipp?.lat, lon: incident.ipp?.lon } : { cleared: true });
+      return { incident };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
+  // ---------------------------------------------------------- subject (who we are looking for)
+  // Logged-in crew only: display keys (the TV) never see these details.
+  const subjectIncident = (id: string, reply: FastifyReply) => {
+    const inc = search.incidentById(id);
+    if (!inc) return void bad(reply, 'incident not found', 404);
+    return inc;
+  };
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/subject', { preHandler: member }, async (req, reply) => {
+    if (!subjectIncident(req.params.id, reply)) return;
+    return { subject: search.subjects.get(req.params.id) ?? null };
+  });
+
+  app.put<{ Params: { id: string }; Body: SubjectPatch }>('/api/incidents/:id/subject', { preHandler: manager }, async (req, reply) => {
+    if (!subjectIncident(req.params.id, reply)) return;
+    try {
+      const p = req.principal!;
+      const b = req.body ?? {};
+      const subject = search.subjects.set(req.params.id, b, p.kind === 'user' ? p.userId : undefined);
+      search.subjectChanged();
+      // No personal details in the audit log: just which fields changed.
+      audit.log(p, req.ip, 'subject.updated', { type: 'incident', id: req.params.id }, { fields: Object.keys(b) });
+      return { subject };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
+  // Photo: raw image body (the console resizes to ~1280 px before upload).
+  app.addContentTypeParser(['image/jpeg', 'image/png', 'image/webp'], { parseAs: 'buffer', bodyLimit: PHOTO_MAX_BYTES }, (_req, body, done) => done(null, body));
+  app.put<{ Params: { id: string }; Body: Buffer }>('/api/incidents/:id/subject/photo', { preHandler: manager, bodyLimit: PHOTO_MAX_BYTES }, async (req, reply) => {
+    if (!subjectIncident(req.params.id, reply)) return;
+    try {
+      const p = req.principal!;
+      const mime = String(req.headers['content-type'] ?? '').split(';')[0].trim();
+      if (!Buffer.isBuffer(req.body)) return bad(reply, 'send the image as the request body with an image/* content-type');
+      const subject = search.subjects.setPhoto(req.params.id, req.body, mime, p.kind === 'user' ? p.userId : undefined);
+      search.subjectChanged();
+      audit.log(p, req.ip, 'subject.photo', { type: 'incident', id: req.params.id }, { bytes: req.body.length });
+      return { subject };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/subject/photo', { preHandler: member }, async (req, reply) => {
+    if (!subjectIncident(req.params.id, reply)) return;
+    const photo = search.subjects.photoPath(req.params.id);
+    if (!photo) return bad(reply, 'no photo', 404);
+    reply.header('cache-control', 'private, no-store').type(photo.mime);
+    return reply.send(fs.createReadStream(photo.file));
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/incidents/:id/subject/photo', { preHandler: manager }, async (req, reply) => {
+    if (!subjectIncident(req.params.id, reply)) return;
+    const subject = search.subjects.deletePhoto(req.params.id, req.principal?.kind === 'user' ? req.principal.userId : undefined);
+    search.subjectChanged();
+    audit.log(req.principal, req.ip, 'subject.photo.deleted', { type: 'incident', id: req.params.id });
+    return { subject: subject ?? null };
   });
 
   app.get<{ Params: { id: string }; Querystring: { teamId?: string; userId?: string; since?: string; until?: string } }>('/api/incidents/:id/tracks', { preHandler: anyUser }, async (req, reply) => {

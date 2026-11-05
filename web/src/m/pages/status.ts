@@ -1,5 +1,5 @@
-import type { ResponseStatus } from '../../../../shared/types';
-import { put } from '../../api';
+import type { IncidentSubject, ResponseStatus, SearchIncident } from '../../../../shared/types';
+import { get, put } from '../../api';
 import { bearingDeg, distanceM, esc, fmtDistance, fmtElapsed, fmtTime } from '../../format';
 import { anchorOf } from '../../map';
 import { renderWarnings } from '../../panels/warnings';
@@ -26,26 +26,64 @@ export function wireSetup(root: HTMLElement): void {
   wireActions(root, { 'ot-dismiss': () => tracking.dismiss() });
 }
 
+/** Subject details are fetched on demand (never in the snapshot) and cached per incident+version. */
+let subjectCache: { key: string; subject: IncidentSubject | null; loading?: boolean } | undefined;
+function subjectFor(inc: SearchIncident): IncidentSubject | null | undefined {
+  const key = `${inc.id}:${inc.subjectUpdatedAt ?? ''}`;
+  if (subjectCache?.key === key) return subjectCache.subject;
+  if (!inc.subjectUpdatedAt) return null;
+  if (subjectCache?.loading && subjectCache.key === key) return undefined;
+  subjectCache = { key, subject: null, loading: true };
+  get<{ subject: IncidentSubject | null }>(`/api/incidents/${inc.id}/subject`)
+    .then((r) => { subjectCache = { key, subject: r.subject }; store.notify(); })
+    .catch(() => { subjectCache = undefined; });
+  return undefined;
+}
+
+function subjectCard(inc: SearchIncident, me?: { lat: number; lon: number }): string {
+  const s = subjectFor(inc);
+  if (s === undefined) return card('Subject', note('Loading details…'));
+  if (!s) return '';
+  const photo = s.hasPhoto ? `<img src="/api/incidents/${inc.id}/subject/photo?t=${encodeURIComponent(s.photoUpdatedAt ?? '')}" alt="Subject" />` : '';
+  const flags = [s.despondent ? 'Despondent' : '', s.mentalHealth ? 'Mental health' : '', s.selfHarmHistory ? `Previous self-harm${s.selfHarmMeans ? `: ${s.selfHarmMeans}` : ''}` : ''].filter(Boolean);
+  const kv = (label: string, v?: string) => (v ? `<div><span>${label}</span>${esc(v)}</div>` : '');
+  void me;
+  return `<section class="card subject-card"><h2>Subject</h2>
+    <div class="subject-head">${photo}<div><div class="subject-name">${esc(s.name ?? 'Unknown')}</div><div class="muted">${[s.sex, s.age !== undefined ? `${s.age} yrs` : ''].filter(Boolean).join(' · ')}</div></div></div>
+    ${flags.length ? `<div class="subject-flags">${flags.map((f) => `<span class="badge-s amber">${esc(f)}</span>`).join('')}</div>` : ''}
+    <div class="subject-kv">${kv('CLOTHING / APPEARANCE', s.clothing)}${kv('DESCRIPTION', s.description)}${kv('SIGNIFICANT LOCATIONS', s.locations)}${kv('RELEVANT HISTORY', s.history)}</div>
+    <p class="muted small">Shared with crew only. Do not forward.</p>
+  </section>`;
+}
+
 export function renderStatus(root: HTMLElement): void {
   const { state, search, me } = store.s;
   if (!state) {
     root.innerHTML = note('Connecting…');
     return;
   }
-  const inc = state.mode.mode === 'callout' ? state.mode.incident : undefined;
+  const callout = state.mode.mode === 'callout' ? state.mode.incident : undefined;
+  // A tasking is a search opened from the console without paging anyone.
+  const tasking = !callout && search?.incident?.kind === 'tasking' ? search.incident : undefined;
+  const inc = callout ?? tasking;
   const { response, team, member } = store.mine;
   const responding = (search?.responders ?? []).filter((r) => r.status === 'responding' || r.status === 'on-scene');
   const myFix = me ? search?.latest[me.id] : undefined;
+  const fromMe = (lat: number, lon: number) => (myFix ? `${fmtDistance(distanceM(myFix.lat, myFix.lon, lat, lon))} · ${Math.round(bearingDeg(myFix.lat, myFix.lon, lat, lon)).toString().padStart(3, '0')}° from you` : '');
 
-  let html = `<div class="mode-row ${inc ? 'callout' : 'standby'}"><span class="mode-tag ${inc ? 'mode-callout' : 'mode-standby'}">${inc ? 'CALLOUT' : 'STANDBY'}</span>${inc ? `<span class="elapsed-s" data-elapsed="${esc(inc.receivedAt)}">${fmtElapsed(Date.now() - Date.parse(inc.receivedAt))}</span>` : `<span class="muted">${esc(state.station.name)}</span>`}</div>`;
+  const tag = callout ? '<span class="mode-tag mode-callout">CALLOUT</span>' : tasking ? '<span class="mode-tag mode-tasking">TASKING</span>' : '<span class="mode-tag mode-standby">STANDBY</span>';
+  const startedAt = callout?.receivedAt ?? tasking?.startedAt;
+  let html = `<div class="mode-row ${inc ? 'callout' : 'standby'}">${tag}${startedAt ? `<span class="elapsed-s ${tasking ? 'tasking' : ''}" data-elapsed="${esc(startedAt)}">${fmtElapsed(Date.now() - Date.parse(startedAt))}</span>` : `<span class="muted">${esc(state.station.name)}</span>`}</div>`;
   html += renderWarnings(state);
   if (tracking.needsSetup) html += setupCard();
 
   if (inc) {
-    html += `<section class="card incident-card">
-      <div class="k">RECEIVED ${fmtTime(inc.receivedAt)}</div>
+    const ipp = search?.incident?.ipp;
+    html += `<section class="card incident-card ${tasking ? 'tasking' : ''}">
+      <div class="k">${tasking ? 'TASKING STARTED' : 'RECEIVED'} ${fmtTime(startedAt)}</div>
       <div class="inc-text-m">${esc(inc.text)}</div>
-      ${inc.lat !== undefined && inc.lon !== undefined ? `<div class="muted">${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}${myFix ? ` · ${fmtDistance(distanceM(myFix.lat, myFix.lon, inc.lat, inc.lon))} from you` : ''}</div>` : ''}
+      ${inc.lat !== undefined && inc.lon !== undefined ? `<div class="muted">${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}${myFix ? ` · ${fromMe(inc.lat, inc.lon)}` : ''}</div>` : ''}
+      ${ipp ? `<div class="ipp-row"><b>Planning point${ipp.label ? ` · ${esc(ipp.label)}` : ''}</b><div class="muted">${ipp.lat.toFixed(4)}, ${ipp.lon.toFixed(4)}${myFix ? ` · ${fromMe(ipp.lat, ipp.lon)}` : ''}</div></div>` : ''}
     </section>`;
 
     // respond buttons
@@ -63,17 +101,19 @@ export function renderStatus(root: HTMLElement): void {
       </section>`;
     }
 
+    if (search?.incident) html += subjectCard(search.incident, myFix);
+
     // my team
     if (team && member) {
       const targets = (search?.targets ?? []).filter((t) => t.teamId === team.id && t.status !== 'cancelled' && t.status !== 'done');
       html += card(
         `My team · ${team.name}`,
         `<div class="callsign" style="--team:${esc(team.colour)}">${esc(member.callsign)}</div>
+         <div class="muted small">Sweep width ${team.searchWidthM} m each side</div>
          <div class="members">${team.members.map((m) => `<span class="chip-m ${m.position === 0 ? 'leader' : ''}">${esc(m.callsign)} ${esc(m.name.split(' ')[0])}</span>`).join('')}</div>
          ${targets.length ? `<div class="k">TARGETS</div>${targets.map((t) => {
            const [lon, lat] = anchorOf(t.geometry);
-           const d = myFix ? `${fmtDistance(distanceM(myFix.lat, myFix.lon, lat, lon))} · ${Math.round(bearingDeg(myFix.lat, myFix.lon, lat, lon)).toString().padStart(3, '0')}°` : '';
-           return `<div class="target-row"><b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : 'grey'}">${esc(t.status)}</span> <span class="muted">${d}</span>${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}</div>`;
+           return `<div class="target-row"><b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : 'grey'}">${esc(t.status)}</span> <span class="muted">${fromMe(lat, lon)}</span>${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}</div>`;
          }).join('')}` : note('No target assigned yet')}`,
       );
     }
@@ -81,7 +121,7 @@ export function renderStatus(root: HTMLElement): void {
     html += card(`Responding · ${responding.length}`, responding.length ? `<div class="members">${responding.map((r) => `<span class="chip-m">${esc(r.teamCallsign ?? r.callsign ?? '')} ${esc(r.name)}${r.etaMin && r.status === 'responding' ? ` <small>${r.etaMin}m</small>` : ''}</span>`).join('')}</div>` : note('Nobody has responded yet'));
     if (!myFix && !tracking.needsSetup) html += note(tracking.linked ? 'Your position is not being received yet. Open OwnTracks and tap Publish; check location is allowed Always. To set it up again: More → Phones.' : 'Your position is not being received. Set up OwnTracks under More → Phones.', 'warn');
   } else {
-    html += card('Standby', `<p>No active callout.</p>${state.mode.lastIncident ? `<p class="muted">Last: ${esc(state.mode.lastIncident.text.slice(0, 120))}</p>` : ''}`);
+    html += card('Standby', `<p>No active callout or tasking.</p>${state.mode.lastIncident ? `<p class="muted">Last: ${esc(state.mode.lastIncident.text.slice(0, 120))}</p>` : ''}`);
   }
 
   root.innerHTML = html;

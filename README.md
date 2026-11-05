@@ -41,6 +41,10 @@ feed health dots.
 position) · map at ~70 % width with incident pin, station and rings · wind, tide,
 daylight only · crew muster panel. Everything else hidden.
 
+**Tasking**: a search opened from the console without a callout (training, a Garda request,
+a planned search). The TV keeps the standby layout with a TASKING tag and shows teams,
+targets and the planning point on its map; nobody is paged.
+
 ## Data sources — verification results (24/10/2026)
 
 Each endpoint was exercised live before code was written against it.

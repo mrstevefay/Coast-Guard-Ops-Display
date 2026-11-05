@@ -164,6 +164,7 @@
 .map-label-station { font-size: calc(24 * var(--u)); color: #fff; }
 .map-label-incident { font-size: calc(28 * var(--u)); color: #fff; background: var(--red); padding: calc(2 * var(--u)) calc(12 * var(--u)); border-radius: calc(6 * var(--u)); text-shadow: none; }
 .map-label-ring { font-size: calc(20 * var(--u)); color: var(--muted); }
+.map-label-ipp { font-size: calc(24 * var(--u)); color: #111; background: var(--yellow); padding: calc(2 * var(--u)) calc(10 * var(--u)); border-radius: calc(6 * var(--u)); text-shadow: none; }
 .maplibregl-ctrl-attrib { font-size: calc(14 * var(--u)) !important; background: rgba(11, 16, 22, 0.7) !important; color: var(--muted) !important; }
 .maplibregl-ctrl-attrib a { color: var(--muted) !important; }
 /* compact (callout) variants */

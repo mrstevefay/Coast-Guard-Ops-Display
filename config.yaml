@@ -40,7 +40,9 @@ search:
   maxAccuracyM: 100
   # A gap longer than this (seconds) splits a track into separate lines.
   trackGapSec: 300
+  # Team sweep width when a team is created: daylight / after sunset. Adjustable per team.
   defaultSearchWidthM: 20
+  nightSearchWidthM: 10
   teamNames: [Alpha, Bravo, Charlie, Delta, Echo, Foxtrot, Golf, Hotel, India, Juliet]
   teamColours: ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#14b8a6", "#a855f7", "#ef4444", "#84cc16", "#06b6d4"]
   # Reply to OwnTracks with other responders' positions so the app shows them too.
@@ -82,6 +84,10 @@ map:
   tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
   seamarkTileUrl: "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
   attribution: "© OpenStreetMap contributors © OpenSeaMap"
+  # Optional topographic layer for the console (Layers → Topo). Contours and relief from
+  # OpenTopoMap (CC-BY-SA); light use only, self-host for a fleet.
+  topoTileUrl: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
+  topoAttribution: "© OpenTopoMap (CC-BY-SA)"
   # 0..1 — how bright the base map is allowed to get (1 = untouched).
   baseBrightness: 0.62
   standbyZoom: 11.3

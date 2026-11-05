@@ -56,7 +56,8 @@ function render(s: DashboardState): void {
   state = s;
   document.body.dataset.mode = s.mode.mode;
   skeleton(s.mode.mode);
-  set('slot-topbar', renderTopbar(s));
+  const tasking = s.mode.mode !== 'callout' && search?.incident?.kind === 'tasking';
+  set('slot-topbar', renderTopbar(s, tasking));
   if (s.mode.mode === 'callout') {
     set('slot-incident', renderIncident(s));
     set('slot-wind', s.panels.wind ? renderWind(s, true) : '');
@@ -82,7 +83,7 @@ function render(s: DashboardState): void {
     if (!(mapEl as any).__mounted) {
       (mapEl as any).__mounted = true;
       map.mount(mapEl, s);
-    } else map.update(s, s.mode.mode === 'callout' ? search : undefined);
+    } else map.update(s, s.mode.mode === 'callout' || tasking ? search : undefined);
   }
   setConn(connected);
   if (serverVersion && s.version !== serverVersion) location.reload();

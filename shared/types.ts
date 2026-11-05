@@ -350,8 +350,20 @@ export type TeamStatus = 'forming' | 'tasked' | 'searching' | 'returned' | 'stoo
 export type TargetKind = 'point' | 'area' | 'line';
 export type TargetStatus = 'planned' | 'assigned' | 'in-progress' | 'done' | 'cancelled';
 
+/** 'callout' = pager job, display goes to callout mode; 'tasking' = search opened from the console, display stays in standby. */
+export type IncidentKind = 'callout' | 'tasking';
+
+/** Search planning point (IPP / LKP): where the search is planned from. */
+export interface PlanningPoint {
+  lat: number;
+  lon: number;
+  label?: string;
+  setAt: string;
+}
+
 export interface SearchIncident {
   id: string;
+  kind: IncidentKind;
   text: string;
   receivedAt: string;
   lat?: number;
@@ -359,6 +371,32 @@ export interface SearchIncident {
   source?: string;
   startedAt: string;
   endedAt?: string;
+  ipp?: PlanningPoint;
+  /** Bumps when the subject record changes, so phones refetch it. Details are never in the snapshot. */
+  subjectUpdatedAt?: string;
+}
+
+/** Who is being searched for. Visible to logged-in crew only; never sent to display keys. */
+export interface IncidentSubject {
+  incidentId: string;
+  name?: string;
+  sex?: string;
+  age?: number;
+  /** Clothing / physical description. */
+  clothing?: string;
+  description?: string;
+  /** Significant locations: home, car, favourite spots, where last seen. */
+  locations?: string;
+  /** Relevant history: previous incidents, medical, habits. */
+  history?: string;
+  despondent: boolean;
+  mentalHealth: boolean;
+  selfHarmHistory: boolean;
+  /** Previous means of self-harm, if selfHarmHistory. */
+  selfHarmMeans?: string;
+  hasPhoto: boolean;
+  photoUpdatedAt?: string;
+  updatedAt?: string;
 }
 
 export interface ResponderRow {
@@ -460,6 +498,9 @@ export interface PanelToggles {
 export interface MapConfig {
   tileUrl: string;
   seamarkTileUrl?: string;
+  /** Optional topographic raster layer (console toggle), e.g. OpenTopoMap. */
+  topoTileUrl?: string;
+  topoAttribution?: string;
   attribution: string;
   /** 0..1 cap on base-map brightness, to keep a light tile set dark-theme friendly. */
   baseBrightness?: number;

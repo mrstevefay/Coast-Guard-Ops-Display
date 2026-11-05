@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Taskings**: the console's *New tasking* opens a search (responders, teams, targets,
+  tracking) without raising a callout: the TV stays in standby with a TASKING tag and nobody is
+  paged. Tick *Also raise a callout* for the old behaviour; a pager callout supersedes an open
+  tasking. `POST /api/incidents` now defaults to a tasking (`callout: true` for a callout).
+- **Search planning point (IPP)**: set by clicking the map in the console; shown with a label
+  on the console, phones and TV, with distance and bearing from each responder.
+- **Team sweep width** defaults to 20 m in daylight and 10 m after sunset (`search.nightSearchWidthM`),
+  and each team has a ⚙ settings dialog (name, width, colour, status) replacing the slider.
+- **Subject details**: a *Subject* tab in the console records who the search is for (name, sex,
+  age, clothing, description, significant locations, history, despondent / mental health /
+  previous self-harm and means, recent photo). Shown to logged-in crew on the Status page;
+  never sent to display keys (the TV) and kept out of the audit log.
+- **Topo layer**: OpenTopoMap contours/relief toggle in the console (`map.topoTileUrl`).
 - **Settings → Data feeds** in the console: set or clear the AIS (aisstream.io) key, Dublin
   Bay buoy key, webcam URL and label at runtime. Stored in SQLite, applied immediately by
   restarting the feed, overriding `.env` / `config.yaml`. Secrets are masked in the UI and

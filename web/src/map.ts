@@ -57,11 +57,17 @@ export class OpsMap {
       rings: { type: 'geojson', data: emptyFC() },
       station: { type: 'geojson', data: emptyFC() },
       incident: { type: 'geojson', data: emptyFC() },
+      ipp: { type: 'geojson', data: emptyFC() },
       ais: { type: 'geojson', data: emptyFC() },
     };
     const layers: maplibregl.LayerSpecification[] = [
       { id: 'base', type: 'raster', source: 'base', paint: { 'raster-brightness-max': s.map.baseBrightness ?? 1, 'raster-saturation': -0.35, 'raster-contrast': 0.05 } },
     ];
+    if (s.map.topoTileUrl) {
+      // Topographic relief/contours (console toggle, hidden by default).
+      sources.topo = { type: 'raster', tiles: [s.map.topoTileUrl], tileSize: 256, maxzoom: 17, attribution: s.map.topoAttribution ?? '' };
+      layers.push({ id: 'topo', type: 'raster', source: 'topo', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.85, 'raster-brightness-max': s.map.baseBrightness ?? 1 } });
+    }
     if (s.map.seamarkTileUrl) {
       sources.seamark = { type: 'raster', tiles: [s.map.seamarkTileUrl], tileSize: 256, maxzoom: 18 };
       layers.push({ id: 'seamark', type: 'raster', source: 'seamark', paint: { 'raster-opacity': 0.9 } });
@@ -73,6 +79,9 @@ export class OpsMap {
       { id: 'station-dot', type: 'circle', source: 'station', paint: { 'circle-radius': 11, 'circle-color': '#2dd4bf', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } },
       { id: 'incident-halo', type: 'circle', source: 'incident', paint: { 'circle-radius': 34, 'circle-color': '#ef4444', 'circle-opacity': 0.3 } },
       { id: 'incident-dot', type: 'circle', source: 'incident', paint: { 'circle-radius': 15, 'circle-color': '#ef4444', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 4 } },
+      // Search planning point (IPP): yellow diamond-ish marker every team can see.
+      { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': 26, 'circle-color': '#facc15', 'circle-opacity': 0.25 } },
+      { id: 'ipp-dot', type: 'circle', source: 'ipp', paint: { 'circle-radius': 12, 'circle-color': '#facc15', 'circle-stroke-color': '#111111', 'circle-stroke-width': 3 } },
     );
 
     this.map = new maplibregl.Map({
@@ -116,6 +125,11 @@ export class OpsMap {
       type: 'FeatureCollection',
       features: this.opts.showAis === false ? [] : (s.ais?.vessels ?? []).map((v) => ({ type: 'Feature', properties: { name: v.name ?? '' }, geometry: { type: 'Point', coordinates: [v.lon, v.lat] } })),
     });
+    const ipp = search?.incident?.ipp;
+    (m.getSource('ipp') as GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: ipp ? [{ type: 'Feature', properties: { label: ipp.label ?? '' }, geometry: { type: 'Point', coordinates: [ipp.lon, ipp.lat] } }] : [],
+    });
 
     // HTML labels (no glyph server needed on the kiosk)
     for (const mk of this.markers) mk.remove();
@@ -128,6 +142,7 @@ export class OpsMap {
     };
     label(st.lon, st.lat, st.shortName, 'map-label-station', 16);
     if (inc?.lat !== undefined && inc?.lon !== undefined) label(inc.lon, inc.lat, 'INCIDENT', 'map-label-incident', 22);
+    if (ipp) label(ipp.lon, ipp.lat, ipp.label ? `IPP · ${ipp.label}` : 'IPP', 'map-label-ipp', 18);
     if (this.opts.rings !== false) {
       for (const km of s.map.ringsKm) {
         const north = ring(st.lat, st.lon, km, 4).geometry.coordinates[0][0];
@@ -137,11 +152,11 @@ export class OpsMap {
 
     if (this.opts.search) this.updateSearch(search);
 
-    const modeKey = `${s.mode.mode}:${inc?.id ?? ''}`;
+    const modeKey = `${s.mode.mode}:${inc?.id ?? search?.incident?.id ?? ''}`;
     const modeChanged = modeKey !== `${this.lastMode}:${this.lastIncidentId}`;
     if (force || modeChanged) {
       this.lastMode = s.mode.mode;
-      this.lastIncidentId = inc?.id ?? '';
+      this.lastIncidentId = inc?.id ?? search?.incident?.id ?? '';
       const shouldFit = this.opts.autoFit !== false ? true : !this.fitted;
       if (shouldFit) {
         this.fitted = true;
@@ -149,7 +164,8 @@ export class OpsMap {
           m.resize();
           const pts: [number, number][] = [];
           if (inc?.lat !== undefined && inc?.lon !== undefined) pts.push([inc.lon, inc.lat]);
-          if (search && s.mode.mode === 'callout') {
+          if (search?.incident) {
+            if (search.incident.ipp) pts.push([search.incident.ipp.lon, search.incident.ipp.lat]);
             for (const f of Object.values(search.latest)) pts.push([f.lon, f.lat]);
             for (const t of search.targets) pts.push(...flat(t.geometry));
           }
@@ -214,7 +230,7 @@ export class OpsMap {
     (this.map.getSource('coverage') as GeoJSONSource | undefined)?.setData(coverage);
   }
 
-  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels', on: boolean): void {
+  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels' | 'topo', on: boolean): void {
     if (id === 'labels') {
       this.labelsOn = on;
       for (const mk of this.searchMarkers) mk.getElement().style.display = on ? '' : 'none';

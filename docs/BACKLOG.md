@@ -17,7 +17,15 @@ service-worker handler in the crew PWA). Falls back to the pager, never replaces
 Read crew availability from D4H and seed `responses` with status `available` so the muster
 panel shows who is on-island before anyone presses *I'm responding*.
 
-## 4. Search planning module: lost person behaviour, scenario analysis, POI reference
+## 4. Terrain data the system can read
+
+The console now has an OpenTopoMap raster toggle (contours and relief to look at). The next
+step is elevation data the server can query: a DEM for the Howth / north Dublin coast
+(Copernicus GLO-30 or EU-DEM 25 m, or OSi data if licensed), served as terrain-RGB tiles for
+MapLibre hillshade/3D and sampled server-side for slope along targets, viewsheds from the
+planning point, and distance-over-ground. Feeds item 5 (segments weighted by terrain).
+
+## 5. Search planning module: lost person behaviour, scenario analysis, POI reference
 
 **Goal.** Give the search manager a first search plan within minutes of a callout, grounded
 in the *UK Missing Person Behaviour Study* (UKMPBS, Centre for Search Research, Perkins,
@@ -54,7 +62,7 @@ list in `config.yaml` (known hazard spots, regular routes). Rank POIs per scenar
 find-location statistics and distance quartiles; one click turns a POI into a target on the
 existing targets layer.
 
-**Map output.** Quartile rings (25/50/75/95 %) around the IPP, scenario-coloured segment
+**Map output.** Quartile rings (25/50/75/95 %) around the IPP (now stored on the incident and shown on every map), scenario-coloured segment
 polygons, ranked POI markers. All reuse `web/src/search/layers.ts` and the existing
 `targets` API, so segments become assignable targets with no new tracking logic.
 

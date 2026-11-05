@@ -50,6 +50,7 @@ body[data-mode='callout'] .area-right { grid-template-rows: 1fr 1fr 0.85fr; }
 .station-name { font-size: calc(36 * var(--u)); font-weight: 800; letter-spacing: 0.04em; }
 .mode-tag { font-size: calc(26 * var(--u)); font-weight: 800; padding: calc(4 * var(--u)) calc(16 * var(--u)); border-radius: calc(8 * var(--u)); letter-spacing: 0.1em; }
 .mode-standby { background: var(--panel-2); color: var(--green); border: 2px solid var(--green); }
+.mode-tasking { background: var(--panel-2); color: var(--amber); border: 2px solid var(--amber); }
 .mode-callout { background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
 .conn { font-size: calc(24 * var(--u)); color: var(--amber); font-weight: 700; }
 .date { text-align: right; font-size: calc(34 * var(--u)); font-weight: 700; line-height: 1.05; }
