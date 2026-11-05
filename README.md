@@ -17,7 +17,9 @@ All screenshots are real data, rendered by Playwright (`scripts/screenshot.mjs`)
 ## Phase 2 in one paragraph
 
 The same server now runs on a Vultr VPS behind Caddy (`docker-compose.yml`) with accounts
-(admin / search manager / member), a crew PWA at `/m/`, a laptop console at `/sm/`, an
+(admin / search manager / member), a crew PWA at `/m/`, a laptop console at `/sm/` (with
+**Settings** for all administration: users, display keys, backups, retention, audit log,
+system status, your account and phones), an
 OwnTracks ingest at `/ot`, and a SQLite database (`node:sqlite`, no native modules). Crew press
 *I'm responding*; their phones stream positions via OwnTracks; the search manager builds teams
 (Alpha-0, Alpha-1, …), draws point/area/line targets, and sees live positions, tracks and a
@@ -233,8 +235,8 @@ driver is the usual thing to verify).
 3. Screen blanking off: run `kiosk/disable-screen-blanking.sh` once (handles X11 `xset`
    and Wayfire `[idle]`), and set the TV itself to never sleep / disable HDMI-CEC standby.
    `sudo apt install unclutter` hides the cursor (the page also sets `cursor: none`).
-4. Set the display to 1920×1080 (`raspi-config` → Display, or `wlr-randr`). The layout is
-   fixed at that resolution; a 4K TV should be driven at 1080p.
+4. Any resolution works: the layout is designed on a 1920×1080 grid and scales to the screen
+   (4K, 720p, ultra-wide). 1080p is still the sensible choice on a Pi for GPU headroom.
 5. Optional: `sudo raspi-config` → Boot → Desktop autologin, and a read-only root
    overlay once stable. Logs: `docker compose logs -f`.
 
@@ -247,6 +249,9 @@ Still external: the **pager/WhatsApp bridge** that turns a page into `POST /api/
 (bridge token) and the **push notification** to crew phones on callout (Web Push; needs VAPID
 keys and a push subscription table). Both slot in without schema changes beyond a
 `push_subscriptions` table. D4H availability could feed `responses` with status `available`.
+
+Further candidates, including a lost-person-behaviour search planning module, are in
+[docs/BACKLOG.md](docs/BACKLOG.md).
 
 ## Conventions
 

@@ -1,0 +1,35 @@
+#cloud-config
+# First-boot setup for the hosted ops server (docs/RUNBOOK.md, "First-time VPS setup").
+# Sent to Vultr as user_data by deploy/vultr-create.sh, which substitutes __SSH_PUBKEY__.
+hostname: howth-cg-ops
+timezone: Europe/Dublin
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - fail2ban
+  - unattended-upgrades
+users:
+  - name: deploy
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-hardening.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+  - path: /etc/fail2ban/jail.local
+    content: |
+      [sshd]
+      enabled = true
+runcmd:
+  - mkdir -p /opt/howth-cg
+  - chown deploy:deploy /opt/howth-cg
+  - systemctl enable --now docker fail2ban
+  - systemctl restart ssh
