@@ -24,6 +24,7 @@ export interface AppConfig {
       springRangeM: number; neapRangeM: number;
     };
     waveModel: ProviderBase & { erddap: string; dataset: string; lat: number; lon: number; label: string };
+    dublinBayBuoy: ProviderBase & { url: string; apiKey: string; label: string };
     weatherBuoy: ProviderBase & { erddap: string; dataset: string; stationId: string };
     sunMoon: ProviderBase;
     ais: ProviderBase & {
@@ -48,6 +49,7 @@ const NAMED_ENV: Record<string, string> = {
   CALLOUT_TOKEN: 'callout.token',
   CALLOUT_AUTO_STANDDOWN_MINUTES: 'callout.autoStanddownMinutes',
   AISSTREAM_API_KEY: 'providers.ais.apiKey',
+  DUBLINBAY_API_KEY: 'providers.dublinBayBuoy.apiKey',
   WEBCAM_IMAGE_URL: 'providers.webcam.imageUrl',
   STATION_NAME: 'station.name',
   STATION_LAT: 'station.lat',

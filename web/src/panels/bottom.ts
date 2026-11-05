@@ -54,6 +54,7 @@ const SHORT: Record<string, string> = {
   tidePrediction: 'Tide pred',
   tideGauge: 'Tide gauge',
   waveModel: 'Wave model',
+  dublinBayBuoy: 'DB buoy',
   weatherBuoy: 'M2 buoy',
   sunMoon: 'Sun/moon',
   ais: 'AIS',

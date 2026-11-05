@@ -1,5 +1,6 @@
 import type { AppConfig } from '../config.js';
 import { aisProvider } from './ais.js';
+import { dublinBayBuoyProvider } from './dublinBayBuoy.js';
 import { metForecastProvider } from './metForecast.js';
 import { metObservationsProvider } from './metObservations.js';
 import { metWarningsProvider } from './metWarnings.js';
@@ -22,6 +23,7 @@ export function buildProviders(cfg: AppConfig): Provider[] {
     tidePredictionProvider(cfg),
     tideGaugeProvider(cfg),
     waveModelProvider(cfg),
+    dublinBayBuoyProvider(cfg),
     weatherBuoyProvider(cfg),
     aisProvider(cfg),
     webcamProvider(cfg),

@@ -42,8 +42,8 @@ export function waveModelProvider(cfg: AppConfig): Provider {
       const t1 = erddapTime(new Date(Math.floor(now.getTime() / 3600_000) * 3600_000 + 3 * 3600_000));
       const sel = `[(${t0}):1:(${t1})][(${c.lat})][(${c.lon})]`;
       const url = griddapUrl(c.erddap, c.dataset, `significant_wave_height${sel},peak_wave_period${sel},mean_wave_direction_from${sel}`);
-      const local = parseWaveModel(await fetchErddap(url), now, c.label);
-      return { sea: { ...ctx.current().sea, local } };
+      const model = parseWaveModel(await fetchErddap(url), now, c.label);
+      return { sea: { ...ctx.current().sea, model } };
     },
   };
 }

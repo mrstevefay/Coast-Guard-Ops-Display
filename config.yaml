@@ -103,6 +103,15 @@ providers:
     lon: -5.95
     label: "Howth approaches"
 
+  dublinBayBuoy:
+    enabled: true
+    pollIntervalMs: 600000        # 10 min (hourly data, posted ~15 min past)
+    url: "https://api.dublinbaybuoy.com/rest/v1"
+    # Publishable (client-side) key from dublinbaybuoy.com. Env: DUBLINBAY_API_KEY.
+    # Data from Dublin Bay Buoy, sourced from Irish Lights MetOcean. Not for navigation.
+    apiKey: "sb_publishable_R5KkIpbiwNajUyx3I4aewQ_S4NI8hl3"
+    label: "Dublin Bay buoy"
+
   weatherBuoy:
     enabled: true
     pollIntervalMs: 900000        # 15 min (hourly data)

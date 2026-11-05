@@ -170,11 +170,15 @@ export interface SeaStateReading {
   wind?: WindReading;
   pressureHpa?: number;
   airTempC?: number;
+  /** Source reports gale conditions (Dublin Bay buoy flag). */
+  gale?: boolean;
 }
 
 export interface SeaState {
-  /** Local sea state for Howth approaches (model, until a Dublin Bay buoy feed exists). */
+  /** Local observation: Dublin Bay buoy (Irish Lights MetOcean). */
   local?: SeaStateReading;
+  /** Local model fallback: SWAN wave model point off Howth. */
+  model?: SeaStateReading;
   /** Offshore observation (M2 weather buoy). */
   offshore?: SeaStateReading;
 }
