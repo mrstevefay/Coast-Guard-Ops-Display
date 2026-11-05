@@ -108,6 +108,12 @@ select, input[type='text'], input:not([type]), textarea { background: var(--bg);
 .set-card h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .set-card .btn-sm { margin: 6px 8px 6px 0; }
 .set-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.feed-row { padding: 12px 0; border-top: 1px solid var(--line); }
+.feed-row:first-child { border-top: 0; padding-top: 0; }
+.feed-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.feed-ctl { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.feed-ctl input { flex: 1; min-width: 280px; max-width: 640px; font-size: 14px; }
+.badge-s.blue { color: var(--blue); border-color: var(--blue); }
 @media (max-width: 900px) { .set-grid2 { grid-template-columns: 1fr; } .sm-settings { grid-template-columns: 160px 1fr; } }
 .set-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 10px 0 14px; }
 .set-form label, .set-col label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }

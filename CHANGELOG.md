@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Settings → Data feeds** in the console: set or clear the AIS (aisstream.io) key, Dublin
+  Bay buoy key, webcam URL and label at runtime. Stored in SQLite, applied immediately by
+  restarting the feed, overriding `.env` / `config.yaml`. Secrets are masked in the UI and
+  kept out of the audit log. New `GET/PUT /api/admin/settings`, `Scheduler.replace()`.
 - **Fix: map tiles "Access blocked"** on the hosted server. Caddy sent `Referrer-Policy:
   same-origin`, which strips the Referer from OpenStreetMap tile requests; OSM's tile usage
   policy then serves the blocked tile. Pages now carry `<meta name="referrer"

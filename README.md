@@ -98,6 +98,9 @@ overridden from the environment:
   `AISSTREAM_API_KEY`, `WEBCAM_IMAGE_URL`, `STATION_NAME`, `STATION_LAT`, `STATION_LON`, `MAP_TILE_URL`.
 * Generic: `CFG__<path>__<to>__<key>=value`, e.g. `CFG__providers__ais__enabled=false`,
   `CFG__panels__webcam=false`, `CFG__providers__metWarnings__localRegionCodes=EI07,EI18`.
+* From the console: `/sm/` → Settings → **Data feeds** edits the AIS key, Dublin Bay buoy
+  key, webcam URL and label at runtime (stored in SQLite, feed restarted immediately). A
+  value set there overrides the env var and `config.yaml`; clearing it falls back.
 
 Key sections: `station` (coords, name), `callout` (token, auto stand-down minutes),
 `panels` (on/off per panel), `map` (tile URLs, zooms, ring radii, base brightness),
