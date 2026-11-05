@@ -175,10 +175,11 @@ It needs root, loop devices and `qemu-user-static`, so it runs in GitHub Actions
 
 1. Actions → **pi-image** → *Run workflow* (or push a tag `v0.1.0`, which also attaches
    the image to a release). ~30–40 min. Download `howth-cg-dashboard-pi.img.xz`.
-2. Flash with Raspberry Pi Imager (*Use custom*). Imager's OS customisation (Wi-Fi,
-   hostname, user) works on top of this image; with Ethernet you can skip it.
+2. Flash with Raspberry Pi Imager (*Use custom*). With Ethernet nothing else is needed.
 3. On the card's `bootfs` partition edit `howth-cg.env` (callout token, AIS key, webcam
    URL). Optionally drop a `howth-cg.yaml` there to replace the baked-in `config.yaml`.
+   For Wi-Fi, copy `network-config.example` → `network-config` and `user-data.example`
+   → `user-data` and fill in the SSID/password (cloud-init; first boot only).
 4. Boot. First boot expands the filesystem (~1 min); the display comes up by itself.
 
 Default login `cg` / `howthcg` over SSH — change it (`passwd`) or set your own in Imager.

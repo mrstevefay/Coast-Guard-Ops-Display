@@ -13,9 +13,10 @@ Before first boot (optional, all on this partition)
   ssh               SSH is enabled (file present). Delete it to disable.
   userconf.txt      login user. Default  cg / howthcg  — CHANGE IT (see README).
 
-Wi-Fi
-  Use Raspberry Pi Imager "OS customisation" when flashing (set Wi-Fi, hostname,
-  user), or plug in Ethernet. Imager customisation works on top of this image.
+Wi-Fi (first boot only)
+  Copy network-config.example to network-config and user-data.example to user-data
+  on this partition and fill in SSID/password (cloud-init, Raspberry Pi OS Trixie).
+  Ethernet needs nothing. Raspberry Pi Imager's OS customisation also works.
 
 Logs / admin (ssh cg@howth-cg.local)
   sudo journalctl -u howth-cg-dashboard -f

@@ -133,6 +133,8 @@ chr systemctl disable getty@tty1.service || true
 log "writing boot partition files"
 cp "$HERE/boot/howth-cg.env" "$BOOT/howth-cg.env"
 cp "$HERE/boot/README-howth-cg.txt" "$BOOT/README-howth-cg.txt"
+cp "$HERE/boot/network-config.example" "$BOOT/network-config.example"
+cp "$HERE/boot/user-data.example" "$BOOT/user-data.example"
 touch "$BOOT/ssh"
 # default login user (Raspberry Pi OS userconf mechanism); Imager customisation overrides
 PASS_HASH=$(openssl passwd -6 "$IMG_PASS")

@@ -1,0 +1,13 @@
+# Wi-Fi for first boot (cloud-init / netplan format, Raspberry Pi OS Trixie).
+# Rename this file to  network-config  (no extension) and fill in your network.
+# Ethernet needs nothing. Applied on FIRST boot only.
+network:
+  version: 2
+  renderer: NetworkManager
+  wifis:
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "YOUR-SSID":
+          password: "YOUR-PASSWORD"

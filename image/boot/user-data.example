@@ -1,0 +1,9 @@
+#cloud-config
+# First-boot settings (cloud-init). Rename to  user-data  (no extension) to use.
+# The Wi-Fi radio stays blocked until a regulatory country is set, so keep the
+# raspi-config line if you use network-config.
+hostname: howth-cg
+timezone: Europe/Dublin
+runcmd:
+  - raspi-config nonint do_wifi_country IE
+  - nmcli radio wifi on
