@@ -3,7 +3,9 @@ import { del, get, post } from '../../api';
 import { esc, fmtTime } from '../../format';
 import { navigate } from '../router';
 import { store } from '../store';
+import { tracking } from '../tracking';
 import { btn, card, err, field, formData, note, toast, wireActions } from '../ui';
+import { setupCard, wireSetup } from './status';
 
 interface NewDevice {
   device: DevicePublic;
@@ -33,6 +35,7 @@ export async function renderMore(root: HTMLElement): Promise<void> {
       if (!confirm('Revoke this phone? OwnTracks on it will stop working.')) return;
       await del(`/api/devices/${el.dataset.id}`);
       toast('Revoked');
+      await tracking.prepare(); // if that was this phone, offer the setup again
       await renderDevices(root.querySelector('#devices')!);
     },
   });
@@ -43,9 +46,19 @@ async function renderDevices(el: HTMLElement): Promise<void> {
   try {
     const { devices } = await get<{ devices: DevicePublic[] }>('/api/devices');
     const live = devices.filter((d) => !d.revokedAt);
+    const linked = tracking.linked;
     el.innerHTML = `<h2>Phones (OwnTracks)</h2>
-      ${live.length ? live.map((d) => `<div class="member-row"><b>${esc(d.name)}</b> <span class="muted">${esc(d.username)}</span><span class="right muted">${d.lastSeenAt ? `seen ${fmtTime(d.lastSeenAt)}` : 'never seen'}</span> ${btn('Revoke', 'revoke-device', 'small ghost', `data-id="${d.id}"`)}</div>`).join('') : note('No phone set up yet. Your position only reaches the team once OwnTracks is installed and linked.')}
-      ${btn('+ Add this phone', 'add-device', 'primary wide')}`;
+      ${live.length ? live.map((d) => `<div class="member-row"><b>${esc(d.name)}</b>${linked?.deviceId === d.id ? ' <span class="badge-s blue">this phone</span>' : ''} <span class="muted">${esc(d.username)}</span><span class="right muted">${d.lastSeenAt ? `seen ${fmtTime(d.lastSeenAt)}` : 'never seen'}</span> ${btn('Revoke', 'revoke-device', 'small ghost', `data-id="${d.id}"`)}</div>`).join('') : note('No phone set up yet. Your position only reaches the team once OwnTracks is installed and linked.')}
+      ${tracking.needsSetup ? setupCard() : ''}
+      <div class="btn-row">${tracking.isMobile ? btn(linked ? 'Send setup to OwnTracks again' : 'Set up this phone', 'link-device', 'primary') : ''}${btn('+ Add another phone (QR)', 'add-device', 'ghost')}</div>`;
+    wireSetup(el);
+    el.querySelector('[data-action="link-device"]')?.addEventListener('click', async () => {
+      // A new credential for this phone; the never-seen one it replaces is revoked server-side.
+      tracking.dismissed = false;
+      await tracking.prepare(true);
+      await renderDevices(el);
+      el.querySelector<HTMLElement>('.setup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   } catch (e) {
     el.innerHTML = `<h2>Phones (OwnTracks)</h2>${err(e instanceof Error ? e.message : 'failed')}`;
   }

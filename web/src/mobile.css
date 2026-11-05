@@ -83,6 +83,9 @@ body.callout .tabs a[data-tab='status'] { color: var(--red); }
 .team-card { border-left: 6px solid var(--team); }
 .swatch { width: 12px; height: 12px; border-radius: 50%; background: var(--team); display: inline-block; }
 .big-name { font-size: 22px; font-weight: 800; }
+.setup { border-color: var(--blue); background: #0f1d2a; }
+.setup p { margin: 6px 0 12px; }
+.setup .btn.huge { margin: 4px 0; }
 .steps { padding-left: 20px; }
 .steps li { margin: 6px 0; }
 .qr { background: #fff; padding: 12px; border-radius: 12px; width: min(100%, 320px); margin: 12px auto; }

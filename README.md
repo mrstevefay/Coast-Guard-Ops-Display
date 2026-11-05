@@ -121,7 +121,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 **Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
 `GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…` (admin); `GET|POST|DELETE /api/admin/display-keys`,
 `GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
-`GET|POST|DELETE /api/devices…`, `GET /api/devices/:id/qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
+`GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
 `PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;

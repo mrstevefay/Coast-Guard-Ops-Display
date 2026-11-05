@@ -39,9 +39,24 @@ export interface OwnTracksConfig {
   ignoreStaleLocations: number;
   autostartOnBoot: true;
   cleanSession: true;
+  /** Android: 3 = high accuracy (GPS). */
+  locatorPriority: number;
+  /** iOS spelling of pubExtendedData (battery, velocity, course). */
+  extendedData: true;
+  /** Lets the server answer a fix with `{"_type":"cmd","action":"reportLocation"}`. */
+  allowRemoteLocation: true;
 }
 
-const SECRET_TTL_MS = 10 * 60_000;
+export const SECRET_TTL_MS = 10 * 60_000;
+
+/** A sensible device name from the browser's user agent, for the one-tap link flow. */
+export function deviceNameFromUa(ua: string | undefined): string {
+  const s = ua ?? '';
+  if (/iPhone/i.test(s)) return 'iPhone';
+  if (/iPad/i.test(s)) return 'iPad';
+  if (/Android/i.test(s)) return 'Android';
+  return 'phone';
+}
 
 export function slug(s: string): string {
   return s
@@ -103,13 +118,33 @@ export class Devices {
 
   /** The plain secret, only while fresh (for QR / config download right after creation). */
   freshSecret(deviceId: number): string | undefined {
+    return this.fresh(deviceId)?.secret;
+  }
+
+  /** Secret plus its expiry while fresh. */
+  fresh(deviceId: number): { secret: string; expiresAt: string } | undefined {
     const f = this.freshSecrets.get(deviceId);
     if (!f) return undefined;
     if (f.expires < Date.now()) {
       this.freshSecrets.delete(deviceId);
       return undefined;
     }
-    return f.secret;
+    return { secret: f.secret, expiresAt: new Date(f.expires).toISOString() };
+  }
+
+  /**
+   * Revoke this user's live devices that never sent a fix. Used by the one-tap link flow so
+   * re-sending the setup does not pile up dead credentials, while a phone that is already
+   * reporting is left alone.
+   */
+  revokeUnseenForUser(userId: number): number {
+    let n = 0;
+    for (const d of this.listForUser(userId)) {
+      if (d.revoked_at || d.last_seen_at) continue;
+      this.revoke(d.id);
+      n++;
+    }
+    return n;
   }
 
   revoke(id: number): void {
@@ -164,6 +199,9 @@ export class Devices {
       ignoreStaleLocations: 1,
       autostartOnBoot: true,
       cleanSession: true,
+      locatorPriority: 3,
+      extendedData: true,
+      allowRemoteLocation: true,
     };
   }
 

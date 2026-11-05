@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **One-tap OwnTracks setup**: the crew app fetches a credential for the phone it runs on and
+  shows *Set up tracking on this phone* on first open; *Open OwnTracks* (or the first *I'm
+  responding*) hands the full HTTP-mode configuration to the app. More → Phones gains *Send
+  setup to OwnTracks again*. Config now also sets high accuracy (Android), extended data and
+  remote location requests. New `POST /api/devices/link`, `GET /api/devices/:id/link`.
 - **Console settings** (`/sm/#settings/…`): all administration on the desktop: users (add,
   edit, inline role change, reset password, deactivate, remove), display keys, backups and
   retention (previously API-only), audit log with range and text filter, system status with

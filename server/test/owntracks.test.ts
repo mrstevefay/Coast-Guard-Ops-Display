@@ -122,6 +122,28 @@ describe('/ot ingest and device management', () => {
     t.callout.standdown('test');
   });
 
+  it('one-tap link names the phone from the user agent and replaces never-seen devices only', async () => {
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1';
+    const h = { cookie, 'sec-fetch-site': 'same-origin', 'user-agent': ua };
+    const first = json(await t.app.inject({ method: 'POST', url: '/api/devices/link', headers: h, payload: {} }));
+    expect(first.device.name).toBe('iPhone');
+    expect(first.configLink.startsWith('owntracks:///config?inline=')).toBe(true);
+    expect(Date.parse(first.expiresAt)).toBeGreaterThan(Date.now());
+    expect(first.otrc).toMatchObject({ locatorPriority: 3, extendedData: true, allowRemoteLocation: true });
+    // the link can be fetched again while the secret is fresh
+    const again = json(await t.app.inject({ method: 'GET', url: `/api/devices/${first.device.id}/link`, headers: { cookie } }));
+    expect(again.configLink).toBe(first.configLink);
+    // linking again revokes the unseen one and issues a new credential…
+    const second = json(await t.app.inject({ method: 'POST', url: '/api/devices/link', headers: h, payload: {} }));
+    expect(second.device.id).not.toBe(first.device.id);
+    expect(t.devices.byId(first.device.id)!.revoked_at).not.toBeNull();
+    expect((await t.app.inject({ method: 'GET', url: `/api/devices/${first.device.id}/link`, headers: { cookie } })).statusCode).toBe(410);
+    // …but the original phone, which has reported, is left alone
+    expect(t.devices.byId(device.id)!.revoked_at).toBeNull();
+    const live = json(await t.app.inject({ method: 'GET', url: '/api/devices', headers: { cookie } })).devices.filter((x: any) => !x.revokedAt);
+    expect(live.map((x: any) => x.id).sort()).toEqual([device.id, second.device.id].sort());
+  });
+
   it('revoked devices are refused', async () => {
     const del = await t.app.inject({ method: 'DELETE', url: `/api/devices/${device.id}`, headers: { cookie, 'sec-fetch-site': 'same-origin' } });
     expect(del.statusCode).toBe(200);
