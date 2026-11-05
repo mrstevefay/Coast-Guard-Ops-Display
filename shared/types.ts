@@ -286,7 +286,7 @@ export interface MusterState {
   minimumCrew: number;
   /** Role names the station needs covered for a launch. */
   requiredRoles: string[];
-  source: 'stub' | 'whatsapp' | 'd4h' | 'mixed';
+  source: 'stub' | 'app' | 'whatsapp' | 'd4h' | 'mixed';
   updatedAt?: string;
 }
 
@@ -341,6 +341,87 @@ export interface Fix {
   tst: number;
   /** When the server received it (ISO). */
   at: string;
+}
+
+// --------------------------------------------------------- search (Phase 2)
+
+export type ResponseStatus = 'responding' | 'on-scene' | 'available' | 'unavailable' | 'stood-down';
+export type TeamStatus = 'forming' | 'tasked' | 'searching' | 'returned' | 'stood-down';
+export type TargetKind = 'point' | 'area' | 'line';
+export type TargetStatus = 'planned' | 'assigned' | 'in-progress' | 'done' | 'cancelled';
+
+export interface SearchIncident {
+  id: string;
+  text: string;
+  receivedAt: string;
+  lat?: number;
+  lon?: number;
+  source?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface ResponderRow {
+  userId: number;
+  name: string;
+  callsign?: string;
+  status: ResponseStatus;
+  etaMin?: number;
+  note?: string;
+  updatedAt: string;
+  teamId?: number;
+  /** Callsign within the team, e.g. "Alpha-1" (set when in a team). */
+  teamCallsign?: string;
+}
+
+export interface TeamMember {
+  userId: number;
+  name: string;
+  /** Alpha-0 is the leader. */
+  callsign: string;
+  position: number;
+}
+
+export interface Team {
+  id: number;
+  incidentId: string;
+  name: string;
+  colour: string;
+  searchWidthM: number;
+  status: TeamStatus;
+  leaderUserId?: number;
+  members: TeamMember[];
+  createdAt: string;
+}
+
+export type TargetGeometry =
+  | { type: 'Point'; coordinates: [number, number] }
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'Polygon'; coordinates: [number, number][][] };
+
+export interface Target {
+  id: number;
+  incidentId: string;
+  teamId?: number;
+  name: string;
+  kind: TargetKind;
+  geometry: TargetGeometry;
+  notes?: string;
+  status: TargetStatus;
+  priority: number;
+  createdAt: string;
+  completedAt?: string;
+}
+
+/** Everything the console / phones / TV need about the current search. */
+export interface SearchSnapshot {
+  incident?: SearchIncident;
+  responders: ResponderRow[];
+  teams: Team[];
+  targets: Target[];
+  /** Latest fix per user id. */
+  latest: Record<number, Fix>;
+  updatedAt: string;
 }
 
 // ----------------------------------------------------------------- health
@@ -422,4 +503,6 @@ export type WsMessage =
   | { type: 'ping'; t: number }
   | { type: 'auth'; ok: boolean; principal?: Principal }
   /** Position deltas, batched ~1 s. Authenticated sockets only. */
-  | { type: 'pos'; fixes: Fix[] };
+  | { type: 'pos'; fixes: Fix[] }
+  /** Full search snapshot on connect and on every change (throttled). */
+  | { type: 'search'; search: SearchSnapshot };

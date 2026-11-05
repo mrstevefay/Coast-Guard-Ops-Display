@@ -10,6 +10,7 @@ import { buildProviders } from './providers/index.js';
 import type { ProviderContext } from './providers/types.js';
 import { Scheduler } from './scheduler.js';
 import { Devices } from './search/devices.js';
+import { SearchService } from './search/service.js';
 import { Tracking } from './search/tracking.js';
 import { StateStore } from './state.js';
 
@@ -45,8 +46,13 @@ async function main() {
     },
   });
   tracking.warm(devices.listAll().filter((d) => !d.revoked_at).map((d) => ({ device: d, user: users.byId(d.user_id)! })).filter((x) => x.user));
+  let search: SearchService | undefined;
+  if (!cfg.auth.open && cfg.search.enabled) {
+    search = new SearchService(db, cfg, store, users, tracking);
+    tracking.context = search; // responders / team members are tracked, not just "callout mode"
+  }
 
-  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking });
+  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
   const purge = setInterval(() => sessions.purgeExpired(), 3600_000);
   purge.unref?.();
   // Route provider logs through fastify's pino logger now that it exists.

@@ -41,8 +41,11 @@ export class StateStore extends EventEmitter {
   }
 
   setMode(m: ModeState): void {
+    const prev = this.mode;
     this.mode = m;
     this.emit('change');
+    /** 'mode' fires with (next, prev) so the search service can open/close incidents. */
+    this.emit('mode', m, prev);
   }
 
   getMode(): ModeState {

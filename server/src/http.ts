@@ -19,6 +19,8 @@ import type { Db } from './db/index.js';
 import type { Scheduler } from './scheduler.js';
 import type { Devices } from './search/devices.js';
 import { owntracksRoutes } from './search/owntracks.js';
+import { searchRoutes } from './search/routes.js';
+import type { SearchService } from './search/service.js';
 import type { Tracking } from './search/tracking.js';
 import type { StateStore } from './state.js';
 import { Hub } from './ws.js';
@@ -37,6 +39,8 @@ export interface ServerDeps {
   audit: Audit;
   devices: Devices;
   tracking: Tracking;
+  /** Present when accounts + search are on. */
+  search?: SearchService;
 }
 
 export interface BuiltServer {
@@ -143,6 +147,26 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
           onFix: (fix) => hub.queueFix(fix),
         }),
       );
+      const search = deps.search;
+      if (search) {
+        await app.register(async (sub) => searchRoutes(sub, { ...auth, db: deps.db, search, callout, audit: deps.audit }));
+        // snapshot to every authenticated socket on change (throttled) and on join
+        let pending: NodeJS.Timeout | undefined;
+        const push = () => {
+          if (pending) return;
+          pending = setTimeout(() => {
+            pending = undefined;
+            hub.sendAuthenticated({ type: 'search', search: search.snapshot() });
+          }, 250);
+          pending.unref?.();
+        };
+        search.on('change', push);
+        hub.onJoin = (_p, send) => send({ type: 'search', search: search.snapshot() });
+        app.addHook('onClose', async () => {
+          search.off('change', push);
+          if (pending) clearTimeout(pending);
+        });
+      }
     }
   } else {
     app.get('/api/auth/me', async () => ({ principal: { kind: 'open' } }));

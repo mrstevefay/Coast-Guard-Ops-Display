@@ -97,7 +97,9 @@ describe('/ot ingest and device management', () => {
   });
 
   it('persists track points during an incident, ignores duplicates and poor fixes, and returns friends', async () => {
-    t.callout.callout({ text: 'test incident' });
+    const mode = t.callout.callout({ text: 'test incident' });
+    // only responders / team members are tracked
+    await t.app.inject({ method: 'PUT', url: `/api/incidents/${mode.incident!.id}/response`, headers: { cookie, 'sec-fetch-site': 'same-origin' }, payload: { status: 'responding' } });
     const ts = nowSec();
     const a = await post(basic(device.username, secret), { _type: 'location', lat: 53.389, lon: -6.066, tst: ts, acc: 10, vel: 18.52, cog: 90 });
     expect(a.statusCode).toBe(200);

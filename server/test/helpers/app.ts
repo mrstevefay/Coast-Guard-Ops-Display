@@ -10,6 +10,7 @@ import { openDb } from '../../src/db/index.js';
 import { buildServer } from '../../src/http.js';
 import { Scheduler } from '../../src/scheduler.js';
 import { Devices } from '../../src/search/devices.js';
+import { SearchService } from '../../src/search/service.js';
 import { Tracking } from '../../src/search/tracking.js';
 import { StateStore } from '../../src/state.js';
 
@@ -41,7 +42,12 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
       return m.mode === 'callout' && m.incident ? { incidentId: m.incident.id } : undefined;
     },
   });
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking });
+  let search: SearchService | undefined;
+  if (!cfg.auth.open && cfg.search.enabled) {
+    search = new SearchService(db, cfg, store, users, tracking);
+    tracking.context = search;
+  }
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
   await app.ready();
 
   const seed = {
@@ -64,5 +70,5 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
     fs.rmSync(cfg.server.dataDir, { recursive: true, force: true });
   };
 
-  return { app, hub, cfg, db, users, sessions, audit, store, callout, devices, tracking, seed, login, close };
+  return { app, hub, cfg, db, users, sessions, audit, store, callout, devices, tracking, search: search!, seed, login, close };
 }
