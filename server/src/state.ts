@@ -13,6 +13,9 @@ export class StateStore extends EventEmitter {
   private data: DashboardData = {};
   private health: Record<string, ProviderHealth> = {};
   private mode: ModeState = { mode: 'standby', changedAt: new Date().toISOString() };
+  /** Latest state received from the hosted server (Pi mirror); undefined = serve local. */
+  private upstream?: DashboardState;
+  private upstreamAt = 0;
 
   constructor(private readonly config: AppConfig) {
     super();
@@ -56,10 +59,24 @@ export class StateStore extends EventEmitter {
     return this.data;
   }
 
+  /** Pi mirror: adopt the hosted server's state while it is fresh. */
+  setUpstream(state: DashboardState | undefined): void {
+    const had = Boolean(this.upstream);
+    this.upstream = state;
+    this.upstreamAt = state ? Date.now() : 0;
+    if (state || had) this.emit('change');
+  }
+
+  get upstreamFresh(): boolean {
+    return Boolean(this.upstream) && Date.now() - this.upstreamAt < this.config.upstream.staleAfterSec * 1000;
+  }
+
   get(): DashboardState {
+    if (this.upstreamFresh) return { ...this.upstream!, upstream: 'live' };
     const c = this.config;
     const data = derive(this.data);
     return {
+      ...(c.upstream.url ? { upstream: 'fallback' as const } : {}),
       ...data,
       generatedAt: new Date().toISOString(),
       station: { name: c.station.name, shortName: c.station.shortName, lat: c.station.lat, lon: c.station.lon },

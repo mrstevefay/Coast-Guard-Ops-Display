@@ -494,6 +494,8 @@ export interface DashboardState extends DashboardData {
   map: MapConfig;
   /** Server build/version, so the kiosk can reload on upgrade. */
   version: string;
+  /** Pi mirror: 'live' = showing the hosted server's state, 'fallback' = local data. */
+  upstream?: 'live' | 'fallback';
 }
 
 // ------------------------------------------------------------ websocket

@@ -13,6 +13,7 @@ import { Devices } from './search/devices.js';
 import { SearchService } from './search/service.js';
 import { Tracking } from './search/tracking.js';
 import { StateStore } from './state.js';
+import { UpstreamMirror } from './upstream.js';
 
 async function main() {
   const cfg = loadConfig();
@@ -52,7 +53,10 @@ async function main() {
     tracking.context = search; // responders / team members are tracked, not just "callout mode"
   }
 
-  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
+  // Pi: mirror the hosted server for the kiosk, fall back to local data when it is unreachable.
+  const mirror = new UpstreamMirror(cfg, store, hub, { info: (o, m) => app.log.info(o as object, m), warn: (o, m) => app.log.warn(o as object, m) });
+  mirror.start();
   const purge = setInterval(() => sessions.purgeExpired(), 3600_000);
   purge.unref?.();
   // Route provider logs through fastify's pino logger now that it exists.
@@ -69,6 +73,7 @@ async function main() {
 
   const shutdown = async (sig: string) => {
     app.log.info({ sig }, 'shutting down');
+    mirror.stop();
     await scheduler.stop();
     await app.close();
     db.close();

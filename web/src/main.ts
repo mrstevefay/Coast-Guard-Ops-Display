@@ -1,5 +1,5 @@
 import './tv.css';
-import type { DashboardState } from '../../shared/types';
+import type { DashboardState, Fix, SearchSnapshot, WsMessage } from '../../shared/types';
 import { fmtDate, fmtDurationMin, fmtElapsed, fmtTimeS, fmtWeekday } from './format';
 import { OpsMap } from './map';
 import { renderAis, renderHealth, renderMuster, renderWebcam } from './panels/bottom';
@@ -14,8 +14,10 @@ import { renderForecastStrip, renderWind } from './panels/wind';
 import { WsClient } from './ws';
 
 const app = document.getElementById('app')!;
-const map = new OpsMap();
+const map = new OpsMap({ search: true, staleSec: 120 });
 let state: DashboardState | undefined;
+let search: SearchSnapshot | undefined;
+const trackFixes = new Map<number, Fix[]>();
 let mapEl: HTMLElement | undefined;
 let builtMode = '';
 let serverVersion = '';
@@ -78,7 +80,7 @@ function render(s: DashboardState): void {
     if (!(mapEl as any).__mounted) {
       (mapEl as any).__mounted = true;
       map.mount(mapEl, s);
-    } else map.update(s);
+    } else map.update(s, s.mode.mode === 'callout' ? search : undefined);
   }
   setConn(connected);
   if (serverVersion && s.version !== serverVersion) location.reload();
@@ -90,7 +92,40 @@ function setConn(c: boolean): void {
   connected = c;
   document.body.dataset.connected = String(c);
   const el = document.getElementById('conn');
-  if (el) el.textContent = c ? '' : 'LINK LOST — showing last data';
+  if (el) el.textContent = c ? (state?.upstream === 'fallback' ? 'LOCAL — hosted server unreachable' : '') : 'LINK LOST — showing last data';
+}
+
+/** Search picture (teams, targets, positions) arrives on the same socket. */
+function onMessage(m: WsMessage): void {
+  if (m.type === 'search') {
+    if (m.search.incident?.id !== search?.incident?.id) trackFixes.clear();
+    search = m.search;
+    for (const f of Object.values(m.search.latest)) pushFix(f);
+    if (state) render(state);
+  } else if (m.type === 'pos') {
+    if (search) for (const f of m.fixes) search.latest[f.userId] = { ...search.latest[f.userId], ...f };
+    for (const f of m.fixes) pushFix(f);
+    if (state?.mode.mode === 'callout') map.appendFixes(m.fixes, search);
+  }
+}
+function pushFix(f: Fix): void {
+  const arr = trackFixes.get(f.userId) ?? [];
+  if (!arr.length || arr[arr.length - 1].tst < f.tst) arr.push(f);
+  if (arr.length > 3000) arr.splice(0, arr.length - 3000);
+  trackFixes.set(f.userId, arr);
+  map.setTracks(trackFixes, search);
+}
+
+/** Kiosk on the hosted server: /?key=dk_… → cookie, then drop the key from the URL. */
+async function adoptDisplayKey(): Promise<void> {
+  const key = new URLSearchParams(location.search).get('key');
+  if (!key) return;
+  try {
+    await fetch('/api/auth/display', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key }) });
+  } catch {
+    /* fall through; WS will fail and the page shows LINK LOST */
+  }
+  history.replaceState(null, '', location.pathname);
 }
 
 /** Per-second ticks: clock, elapsed timer, countdowns — no server round trip. */
@@ -108,7 +143,7 @@ function tick(): void {
   if (now.getHours() === 4 && now.getMinutes() === 0 && now.getSeconds() === 0) location.reload();
 }
 
-new WsClient({ onState: render, onConnection: setConn, reloadAfterMs: 5 * 60_000 }).start();
+void adoptDisplayKey().then(() => new WsClient({ onState: render, onConnection: setConn, onMessage, reloadAfterMs: 5 * 60_000 }).start());
 setInterval(tick, 1000);
 // Re-render periodically so "stale" badges, webcam cache-buster and
 // hour boundaries update even if the server is quiet.
