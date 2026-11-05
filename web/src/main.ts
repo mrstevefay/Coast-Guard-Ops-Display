@@ -1,4 +1,4 @@
-import './style.css';
+import './tv.css';
 import type { DashboardState } from '../../shared/types';
 import { fmtDate, fmtDurationMin, fmtElapsed, fmtTimeS, fmtWeekday } from './format';
 import { OpsMap } from './map';

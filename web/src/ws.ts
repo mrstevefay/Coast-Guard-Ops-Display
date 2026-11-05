@@ -3,8 +3,14 @@ import type { DashboardState, WsMessage } from '../../shared/types';
 export interface WsClientOptions {
   onState: (s: DashboardState) => void;
   onConnection: (connected: boolean) => void;
+  /** Every message (search snapshots, position deltas, auth). */
+  onMessage?: (m: WsMessage) => void;
+  /** Server refused the socket / REST (401): session gone. */
+  onAuthFail?: () => void;
   /** Reload the page after this long without a server connection. */
   reloadAfterMs?: number;
+  /** Display key for kiosks (appended as ?key=). */
+  key?: string;
 }
 
 /**
@@ -19,10 +25,12 @@ export class WsClient {
   private disconnectedSince?: number;
   private watchdog?: number;
   private reconnectTimer?: number;
+  private stopped = false;
 
   constructor(private readonly opts: WsClientOptions) {}
 
   start(): void {
+    this.stopped = false;
     void this.fetchOnce();
     this.connect();
     this.watchdog = window.setInterval(() => this.check(), 5000);
@@ -30,12 +38,18 @@ export class WsClient {
 
   private url(): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${location.host}/api/ws`;
+    const key = this.opts.key ? `?key=${encodeURIComponent(this.opts.key)}` : '';
+    return `${proto}//${location.host}/api/ws${key}`;
   }
 
   private async fetchOnce(): Promise<void> {
     try {
-      const res = await fetch('/api/state', { cache: 'no-store' });
+      const headers: Record<string, string> = this.opts.key ? { 'x-display-key': this.opts.key } : {};
+      const res = await fetch('/api/state', { cache: 'no-store', headers });
+      if (res.status === 401) {
+        this.opts.onAuthFail?.();
+        return;
+      }
       if (res.ok) this.opts.onState((await res.json()) as DashboardState);
     } catch {
       /* WS will deliver */
@@ -43,6 +57,7 @@ export class WsClient {
   }
 
   private connect(): void {
+    if (this.stopped) return;
     try {
       this.ws = new WebSocket(this.url());
     } catch {
@@ -60,6 +75,11 @@ export class WsClient {
       try {
         const msg = JSON.parse(ev.data as string) as WsMessage;
         if (msg.type === 'state') this.opts.onState(msg.state);
+        if (msg.type === 'auth' && !msg.ok) {
+          this.stopped = true;
+          this.opts.onAuthFail?.();
+        }
+        this.opts.onMessage?.(msg);
       } catch {
         /* ignore */
       }
@@ -70,13 +90,14 @@ export class WsClient {
 
   private onDown(): void {
     this.ws = undefined;
+    if (this.stopped) return;
     this.disconnectedSince ??= Date.now();
     this.opts.onConnection(false);
     this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this.reconnectTimer || this.stopped) return;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
@@ -85,18 +106,21 @@ export class WsClient {
   }
 
   private check(): void {
+    if (this.stopped) return;
     const reloadAfter = this.opts.reloadAfterMs ?? 5 * 60_000;
     if (this.ws && this.ws.readyState === WebSocket.OPEN && Date.now() - this.lastMsgAt > 90_000) {
       // server went quiet: force a reconnect
       this.ws.close();
     }
-    if (this.disconnectedSince && Date.now() - this.disconnectedSince > reloadAfter) {
+    if (reloadAfter > 0 && this.disconnectedSince && Date.now() - this.disconnectedSince > reloadAfter) {
       location.reload();
     }
   }
 
   stop(): void {
+    this.stopped = true;
     if (this.watchdog) clearInterval(this.watchdog);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
   }
 }
