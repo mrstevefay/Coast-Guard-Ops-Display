@@ -3,7 +3,7 @@ import type { DashboardData, DashboardState, ModeState, ProviderHealth } from '.
 import type { AppConfig } from './config.js';
 import { derive } from './derive.js';
 
-export const VERSION = process.env.APP_VERSION ?? '0.1.0';
+export const VERSION = process.env.APP_VERSION ?? '1.0.0';
 
 /**
  * Owns the DashboardState. Providers write slices via `merge`; the HTTP layer

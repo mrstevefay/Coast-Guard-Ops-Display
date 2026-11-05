@@ -1,6 +1,6 @@
 name: pi-image
 # Builds a flash-and-boot Raspberry Pi SD card image (.img.xz).
-# Run manually from the Actions tab, or push a tag like v0.1.0 to also attach it to a release.
+# Run manually from the Actions tab, or push a tag like v1.0.0 to also attach it to a release.
 on:
   workflow_dispatch:
   push:

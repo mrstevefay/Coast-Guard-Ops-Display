@@ -1,6 +1,6 @@
 {
   "name": "howth-cg-dashboard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Irish Coast Guard Howth station wall dashboard (Phase 1)",
   "workspaces": ["server", "web"],
