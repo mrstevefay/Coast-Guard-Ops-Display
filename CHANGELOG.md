@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fix: map tiles "Access blocked"** on the hosted server. Caddy sent `Referrer-Policy:
+  same-origin`, which strips the Referer from OpenStreetMap tile requests; OSM's tile usage
+  policy then serves the blocked tile. Pages now carry `<meta name="referrer"
+  content="strict-origin-when-cross-origin">` (overrides the header) and the Caddyfile matches.
+- **Fix: crew app on a desktop browser** stretched cards and the tide curve across the window;
+  it now keeps a centred 640 px column above 700 px wide.
 - **TV display scales to the screen**: every size on the wall display is now `N * var(--u)`,
   with `--u` derived from the viewport (1 design px at 1920×1080). 4K, 720p, laptops and
   ultra-wide all render the same picture; non-16:9 screens widen the map. The crew app and
