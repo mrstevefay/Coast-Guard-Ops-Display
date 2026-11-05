@@ -1,0 +1,14 @@
+[Unit]
+Description=Apply Wi-Fi settings from /boot/firmware/howth-cg-wifi.conf
+ConditionPathExists=/boot/firmware/howth-cg-wifi.conf
+After=NetworkManager.service boot-firmware.mount
+Requires=NetworkManager.service
+Before=network-online.target howth-cg-dashboard.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/howth-cg/bin/apply-wifi.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

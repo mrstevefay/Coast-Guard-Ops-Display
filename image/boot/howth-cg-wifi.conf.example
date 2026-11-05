@@ -1,0 +1,11 @@
+# Wi-Fi for the Howth CG display. Rename this file to  howth-cg-wifi.conf
+# (same folder) and fill in up to two networks. Applied on every boot by
+# howth-cg-wifi.service via NetworkManager; the file is then renamed to
+# howth-cg-wifi.conf.applied so the password does not sit on the card forever.
+# Ethernet needs nothing.
+COUNTRY=IE
+SSID=STATION-SSID
+PSK=STATION-PASSWORD
+# optional second network (e.g. home bench)
+SSID2=
+PSK2=

@@ -124,7 +124,7 @@ echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ) node=$NODE_VERSION" > "$APP/BUILD"
 
 # ---------------------------------------------------------------- services
 log "enabling services"
-chr systemctl enable howth-cg-dashboard.service howth-cg-kiosk.service
+chr systemctl enable howth-cg-dashboard.service howth-cg-kiosk.service howth-cg-wifi.service
 chr systemctl set-default graphical.target
 # The kiosk owns tty1. Masking (not just disabling) stops logind/getty.target
 # from spawning a login prompt there, which would Conflict= the kiosk away.
@@ -138,6 +138,7 @@ chr sh -c 'command -v raspi-config >/dev/null && raspi-config nonint do_wifi_cou
 log "writing boot partition files"
 cp "$HERE/boot/howth-cg.env" "$BOOT/howth-cg.env"
 cp "$HERE/boot/README-howth-cg.txt" "$BOOT/README-howth-cg.txt"
+cp "$HERE/boot/howth-cg-wifi.conf.example" "$BOOT/howth-cg-wifi.conf.example"
 cp "$HERE/boot/network-config.example" "$BOOT/network-config.example"
 cp "$HERE/boot/user-data.example" "$BOOT/user-data.example"
 touch "$BOOT/ssh"

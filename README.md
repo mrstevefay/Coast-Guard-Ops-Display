@@ -178,8 +178,10 @@ It needs root, loop devices and `qemu-user-static`, so it runs in GitHub Actions
 2. Flash with Raspberry Pi Imager (*Use custom*). With Ethernet nothing else is needed.
 3. On the card's `bootfs` partition edit `howth-cg.env` (callout token, AIS key, webcam
    URL). Optionally drop a `howth-cg.yaml` there to replace the baked-in `config.yaml`.
-   For Wi-Fi, copy `network-config.example` → `network-config` and `user-data.example`
-   → `user-data` and fill in the SSID/password (cloud-init; first boot only).
+   For Wi-Fi, rename `howth-cg-wifi.conf.example` → `howth-cg-wifi.conf` and fill in
+   `SSID=`/`PSK=` (plus optional `SSID2=`/`PSK2=`). A first-boot service feeds it to
+   NetworkManager and renames it `.applied`. Already booted? `sudo nmcli dev wifi
+   connect "SSID" password "PSK"` on the console (Ctrl+Alt+F2) does the same.
 4. Boot. First boot expands the filesystem (~1 min); the display comes up by itself.
 
 Default login `cg` / `howthcg` over SSH — change it (`passwd`) or set your own in Imager.
