@@ -21,6 +21,47 @@ callout:
   # Minutes after the callout before the display returns to standby by itself.
   autoStanddownMinutes: 180
 
+# ---- Phase 2: accounts, tracking, search management -------------------------
+auth:
+  # true = no login anywhere (how the Pi runs on the station LAN as a fallback).
+  # false on the hosted server. Env: AUTH_OPEN
+  open: true
+  sessionDays: 180
+  # Public origin of the hosted server, used in OwnTracks configs. Env: PUBLIC_URL
+  publicUrl: ""
+  # First run only: if there are no users, this admin is created. Env: ADMIN_EMAIL / ADMIN_PASSWORD
+  adminEmail: ""
+  adminPassword: ""
+  adminName: "Admin"
+
+search:
+  enabled: true
+  # Fixes worse than this (metres) update "last seen" but are not kept as track points.
+  maxAccuracyM: 100
+  # A gap longer than this (seconds) splits a track into separate lines.
+  trackGapSec: 300
+  defaultSearchWidthM: 20
+  teamNames: [Alpha, Bravo, Charlie, Delta, Echo, Foxtrot, Golf, Hotel, India, Juliet]
+  teamColours: ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#14b8a6", "#a855f7", "#ef4444", "#84cc16", "#06b6d4"]
+  # Reply to OwnTracks with other responders' positions so the app shows them too.
+  owntracksFriends: true
+  staleFixSec: 120
+
+retention:
+  # Days to keep track points after an incident closes. 0 = keep forever.
+  trackDays: 0
+  # Hours of silence before a device's last-known position is cleared.
+  lastFixHours: 24
+  auditYears: 2
+  # Nightly SQLite backups to keep in data/backups.
+  backupKeep: 14
+
+upstream:
+  # Pi only: mirror the hosted server for the kiosk. Env: UPSTREAM_URL / UPSTREAM_KEY
+  url: ""
+  key: ""
+  staleAfterSec: 60
+
 panels:
   wind: true
   tide: true

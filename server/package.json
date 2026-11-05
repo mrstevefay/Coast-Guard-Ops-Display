@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node --no-warnings=ExperimentalWarning dist/server/src/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -21,7 +21,7 @@
     "yaml": "^2.6.0"
   },
   "devDependencies": {
-    "@types/node": "^20.16.0",
+    "@types/node": "^22.10.0",
     "@types/suncalc": "^1.9.2",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.0",

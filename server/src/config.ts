@@ -12,6 +12,41 @@ export interface AppConfig {
   station: { name: string; shortName: string; lat: number; lon: number };
   server: { port: number; host: string; dataDir: string };
   callout: { token: string; autoStanddownMinutes: number };
+  /** Phase 2: accounts. `open: true` = no auth at all (Pi LAN fallback mode). */
+  auth: {
+    open: boolean;
+    sessionDays: number;
+    /** Public origin, e.g. https://ops.example.ie — used for OwnTracks config and cookies. */
+    publicUrl: string;
+    /** First-run bootstrap only: creates the admin if no users exist. */
+    adminEmail: string;
+    adminPassword: string;
+    adminName: string;
+  };
+  search: {
+    enabled: boolean;
+    maxAccuracyM: number;
+    trackGapSec: number;
+    defaultSearchWidthM: number;
+    teamNames: string[];
+    teamColours: string[];
+    owntracksFriends: boolean;
+    /** Seconds without a fix before a responder is shown as stale. */
+    staleFixSec: number;
+  };
+  retention: {
+    /** Days to keep positions after an incident closes; 0 = forever. */
+    trackDays: number;
+    lastFixHours: number;
+    auditYears: number;
+    backupKeep: number;
+  };
+  upstream: {
+    /** wss://ops.example.ie — when set, this server mirrors the hosted one for the kiosk. */
+    url: string;
+    key: string;
+    staleAfterSec: number;
+  };
   panels: PanelToggles;
   map: MapConfig;
   providers: {
@@ -51,6 +86,13 @@ const NAMED_ENV: Record<string, string> = {
   CALLOUT_AUTO_STANDDOWN_MINUTES: 'callout.autoStanddownMinutes',
   AISSTREAM_API_KEY: 'providers.ais.apiKey',
   DUBLINBAY_API_KEY: 'providers.dublinBayBuoy.apiKey',
+  PUBLIC_URL: 'auth.publicUrl',
+  AUTH_OPEN: 'auth.open',
+  ADMIN_EMAIL: 'auth.adminEmail',
+  ADMIN_PASSWORD: 'auth.adminPassword',
+  ADMIN_NAME: 'auth.adminName',
+  UPSTREAM_URL: 'upstream.url',
+  UPSTREAM_KEY: 'upstream.key',
   WEBCAM_IMAGE_URL: 'providers.webcam.imageUrl',
   STATION_NAME: 'station.name',
   STATION_LAT: 'station.lat',

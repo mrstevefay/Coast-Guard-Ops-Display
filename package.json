@@ -12,5 +12,5 @@
     "start": "npm start -w server",
     "screenshots": "node scripts/screenshot.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": { "node": ">=22.13" }
 }

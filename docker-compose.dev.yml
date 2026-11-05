@@ -1,0 +1,24 @@
+# Single-box / local use without TLS: builds from source, port 8080, no auth.
+#   docker compose -f docker-compose.dev.yml up -d --build
+services:
+  dashboard:
+    build: .
+    image: howth-cg-dashboard:dev
+    container_name: howth-cg-dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      CALLOUT_TOKEN: ${CALLOUT_TOKEN:-}
+      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-}
+      WEBCAM_IMAGE_URL: ${WEBCAM_IMAGE_URL:-}
+      AUTH_OPEN: "true"
+      LOG_LEVEL: info
+      TZ: Europe/Dublin
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - dashboard-data:/app/data
+    mem_limit: 512m
+
+volumes:
+  dashboard-data:

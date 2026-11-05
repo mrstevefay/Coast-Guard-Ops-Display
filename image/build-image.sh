@@ -14,7 +14,7 @@ OUT=${2:?output image path}
 HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=${WORK:-$(mktemp -d)}
 PI_OS_URL=${PI_OS_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}
-NODE_VERSION=${NODE_VERSION:-20.19.5}
+NODE_VERSION=${NODE_VERSION:-22.22.0}
 GROW_MB=${GROW_MB:-2560}
 # Default login for the image (userconf.txt). Override via env when building.
 IMG_USER=${IMG_USER:-cg}

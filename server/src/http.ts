@@ -5,8 +5,11 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import type { WsMessage } from '../../shared/types.js';
+import { timingSafeEqualStr } from './auth/password.js';
+import type { Users } from './auth/users.js';
 import type { CalloutManager, CalloutRequest } from './callout.js';
 import type { AppConfig } from './config.js';
+import type { Db } from './db/index.js';
 import type { Scheduler } from './scheduler.js';
 import type { StateStore } from './state.js';
 
@@ -17,8 +20,14 @@ export function findWebDist(): string | undefined {
   return candidates.find((p) => fs.existsSync(path.join(p, 'index.html')));
 }
 
-export async function buildServer(cfg: AppConfig, store: StateStore, callout: CalloutManager, scheduler: Scheduler): Promise<FastifyInstance> {
+export interface ServerDeps {
+  db: Db;
+  users: Users;
+}
+
+export async function buildServer(cfg: AppConfig, store: StateStore, callout: CalloutManager, scheduler: Scheduler, deps?: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, disableRequestLogging: true });
+  app.decorate('deps', deps);
   await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } });
 
   // ---- auth for mutating endpoints (Phase 2 WhatsApp bridge uses these) ----
@@ -128,9 +137,3 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
   return app;
 }
 
-function timingSafeEqualStr(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return r === 0;
-}

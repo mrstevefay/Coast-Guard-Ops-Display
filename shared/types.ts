@@ -290,6 +290,36 @@ export interface MusterState {
   updatedAt?: string;
 }
 
+// ------------------------------------------------------------ accounts (Phase 2)
+
+export type Role = 'admin' | 'manager' | 'member';
+/** What a WebSocket / request is allowed to see. */
+export type Principal = { kind: 'user'; userId: number; role: Role; name: string } | { kind: 'display'; label: string } | { kind: 'open' };
+
+export interface UserPublic {
+  id: number;
+  email: string;
+  name: string;
+  callsign?: string;
+  role: Role;
+  active: boolean;
+  mustChangePassword: boolean;
+  privacyAcceptedAt?: string;
+  lastLoginAt?: string;
+  deviceCount?: number;
+}
+
+export interface DevicePublic {
+  id: number;
+  userId: number;
+  name: string;
+  username: string;
+  tid: string;
+  createdAt: string;
+  lastSeenAt?: string;
+  revokedAt?: string;
+}
+
 // ----------------------------------------------------------------- health
 
 export type ProviderStatus = 'ok' | 'stale' | 'error' | 'disabled' | 'stub' | 'starting';

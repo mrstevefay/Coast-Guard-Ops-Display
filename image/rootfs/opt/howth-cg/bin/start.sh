@@ -8,4 +8,4 @@ if [ -f /boot/firmware/howth-cg.yaml ]; then
 else
   export CONFIG_FILE=/etc/howth-cg/config.yaml
 fi
-exec /usr/local/bin/node server/dist/server/src/index.js
+exec /usr/local/bin/node --no-warnings=ExperimentalWarning server/dist/server/src/index.js
