@@ -250,6 +250,9 @@ Still external: the **pager/WhatsApp bridge** that turns a page into `POST /api/
 keys and a push subscription table). Both slot in without schema changes beyond a
 `push_subscriptions` table. D4H availability could feed `responses` with status `available`.
 
+Further candidates, including a lost-person-behaviour search planning module, are in
+[docs/BACKLOG.md](docs/BACKLOG.md).
+
 ## Conventions
 
 Metric, knots for wind and vessel speed, metres for waves and tide (above Chart Datum),
