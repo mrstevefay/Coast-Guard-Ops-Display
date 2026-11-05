@@ -3,6 +3,8 @@ import type { Provider, ProviderContext } from './providers/types.js';
 import type { StateStore } from './state.js';
 
 const MAX_BACKOFF_MS = 30 * 60 * 1000;
+/** Until a provider has succeeded once (e.g. booted before the network was up) retry quickly. */
+const NEVER_SUCCEEDED_RETRY_MS = 60 * 1000;
 
 interface Runner {
   provider: Provider;
@@ -86,7 +88,9 @@ export class Scheduler {
       r.health.status = r.health.lastSuccess && !this.isStale(r) ? 'ok' : r.health.lastSuccess ? 'stale' : 'error';
       // Even with last-good data we surface the error text; the status only
       // flips to 'error'/'stale' once the data is actually old.
-      delay = Math.min(p.pollIntervalMs * 2 ** Math.min(r.health.consecutiveFailures, 6), MAX_BACKOFF_MS);
+      delay = r.health.lastSuccess
+        ? Math.min(p.pollIntervalMs * 2 ** Math.min(r.health.consecutiveFailures, 6), MAX_BACKOFF_MS)
+        : Math.min(NEVER_SUCCEEDED_RETRY_MS, p.pollIntervalMs);
       this.ctx.log.warn({ provider: p.name, failures: r.health.consecutiveFailures, nextInMs: delay, err: r.health.lastError }, 'provider fetch failed');
     } finally {
       r.inFlight = false;

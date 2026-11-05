@@ -51,3 +51,32 @@ describe('scheduler isolation and back-off', () => {
     vi.useRealTimers();
   });
 });
+
+describe('scheduler before first success', () => {
+  it('retries every 60 s while a provider has never succeeded (boot before network)', async () => {
+    vi.useFakeTimers();
+    const cfg = loadConfig(path.resolve(__dirname, '../../config.yaml'));
+    const store = new StateStore(cfg);
+    const sched = new Scheduler(store, { config: cfg, log, current: () => store.getData() });
+    let calls = 0;
+    const offline: Provider = {
+      name: 'offline',
+      pollIntervalMs: 15 * 60_000,
+      enabled: true,
+      async fetch() {
+        calls++;
+        if (calls < 4) throw new Error('ENOTFOUND');
+        return { webcam: { configured: false, refreshSec: 1 } };
+      },
+    };
+    sched.add(offline);
+    await sched.start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(3 * 60_000 + 100); // 3 more quick retries, not 15/30/60 min
+    expect(calls).toBe(4);
+    expect(store.getHealth().offline.status).toBe('ok');
+    await sched.stop();
+    vi.useRealTimers();
+  });
+});
