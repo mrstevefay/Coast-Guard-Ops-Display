@@ -1,13 +1,16 @@
 import { EventEmitter } from 'node:events';
-import type { Fix, ModeState, MusterState, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import type { Fix, IncidentKind, ModeState, MusterState, PlanningPoint, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import type { AppConfig } from '../config.js';
 import { now, type Db } from '../db/index.js';
 import type { StateStore } from '../state.js';
 import { validateGeometry } from './geometry.js';
+import { Subjects } from './subject.js';
 import type { TrackContext, Tracking } from './tracking.js';
 
-interface IncidentRow { id: string; text: string; received_at: string; lat: number | null; lon: number | null; source: string | null; started_at: string; ended_at: string | null; end_reason: string | null }
+interface IncidentRow { id: string; kind: IncidentKind; text: string; received_at: string; lat: number | null; lon: number | null; source: string | null; started_at: string; ended_at: string | null; end_reason: string | null; ipp_lat: number | null; ipp_lon: number | null; ipp_label: string | null; ipp_set_at: string | null }
 interface TeamRow { id: number; incident_id: string; name: string; colour: string; search_width_m: number; leader_user_id: number | null; status: TeamStatus; created_at: string }
 interface MemberRow { team_id: number; user_id: number; position: number; name: string }
 interface TargetRow { id: number; incident_id: string; team_id: number | null; name: string; kind: TargetKind; geometry: string; notes: string | null; status: TargetStatus; priority: number; created_at: string; completed_at: string | null }
@@ -23,6 +26,8 @@ const TARGET_STATUSES: TargetStatus[] = ['planned', 'assigned', 'in-progress', '
  * snapshot should be re-sent. Also implements TrackContext for ingest.
  */
 export class SearchService extends EventEmitter implements TrackContext {
+  readonly subjects: Subjects;
+
   constructor(
     private readonly db: Db,
     private readonly cfg: AppConfig,
@@ -31,6 +36,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     private readonly tracking: Tracking,
   ) {
     super();
+    this.subjects = new Subjects(db, path.join(cfg.server.dataDir, 'subjects'));
     store.on('mode', (m: ModeState, prev: ModeState) => this.onMode(m, prev));
     tracking.on('fix', () => this.touchMuster());
     this.reconcile(store.getMode());
@@ -40,34 +46,78 @@ export class SearchService extends EventEmitter implements TrackContext {
   private onMode(m: ModeState, prev: ModeState): void {
     if (m.mode === 'callout' && m.incident) {
       if (!this.db.get('SELECT 1 FROM incidents WHERE id = ?', m.incident.id)) {
-        // close anything still open, then open this one
+        // close anything still open (a callout supersedes a tasking), then open this one
         this.closeOpen('superseded');
-        this.db.run('INSERT INTO incidents (id, text, received_at, lat, lon, source, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)', m.incident.id, m.incident.text, m.incident.receivedAt, m.incident.lat ?? null, m.incident.lon ?? null, m.incident.source, now());
+        this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at) VALUES (?, 'callout', ?, ?, ?, ?, ?, ?)", m.incident.id, m.incident.text, m.incident.receivedAt, m.incident.lat ?? null, m.incident.lon ?? null, m.incident.source, now());
       }
     } else if (m.mode === 'standby' && prev?.mode === 'callout') {
-      this.closeOpen('standdown');
+      // Stand-down closes the callout only; a tasking opened meanwhile is unaffected.
+      this.closeOpen('standdown', prev.incident?.id);
     }
     this.changed();
   }
 
-  /** On startup, bring the DB in line with the persisted display mode. */
+  /** On startup, bring the DB in line with the persisted display mode. Taskings survive restarts. */
   private reconcile(m: ModeState): void {
     const open = this.openIncident();
     if (m.mode === 'callout' && m.incident) {
       if (!open || open.id !== m.incident.id) this.onMode(m, { mode: 'standby', changedAt: now() });
-    } else if (open) {
+    } else if (open && open.kind === 'callout') {
       this.closeOpen('restart-standby');
     }
   }
 
-  private closeOpen(reason: string): void {
+  private closeOpen(reason: string, onlyId?: string): void {
     const t = now();
     this.db.tx(() => {
       const open = this.openIncident();
-      if (!open) return;
+      if (!open || (onlyId && open.id !== onlyId)) return;
       this.db.run('UPDATE incidents SET ended_at = ?, end_reason = ? WHERE id = ?', t, reason, open.id);
       this.db.run("UPDATE teams SET status = 'stood-down', updated_at = ? WHERE incident_id = ? AND status <> 'stood-down'", t, open.id);
     });
+  }
+
+  /**
+   * Open a search without a callout: the display stays in standby and nobody is paged, but
+   * responders, teams, targets and tracking all work. Refused while any incident is open.
+   */
+  startTasking(input: { text: string; lat?: number; lon?: number; createdBy?: number }): SearchIncident {
+    const text = (input.text ?? '').toString().trim();
+    if (!text) throw new Error('title is required');
+    const open = this.openIncident();
+    if (open) throw new Error(open.kind === 'callout' ? 'a callout is in progress; stand it down first' : 'a tasking is already open; close it first');
+    const id = randomUUID();
+    const t = now();
+    this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at, created_by) VALUES (?, 'tasking', ?, ?, ?, ?, 'app', ?, ?)", id, text.slice(0, 2000), t, finite(input.lat), finite(input.lon), t, input.createdBy ?? null);
+    this.changed();
+    return toIncident(this.incidentById(id)!, this.subjects);
+  }
+
+  /** Close the open tasking (callouts are closed by stand-down). */
+  closeTasking(id: string, reason = 'closed'): void {
+    const open = this.openIncident();
+    if (!open || open.id !== id) throw new Error('incident is not open');
+    if (open.kind !== 'tasking') throw new Error('this is a callout: stand it down instead');
+    this.closeOpen(reason, id);
+    this.changed();
+  }
+
+  /** Set or clear the search planning point (IPP / LKP) shown on every map. */
+  setPlanningPoint(incidentId: string, ipp: { lat: number; lon: number; label?: string } | null): SearchIncident {
+    this.requireOpen(incidentId);
+    if (ipp) {
+      if (!(Number.isFinite(ipp.lat) && Math.abs(ipp.lat) <= 90 && Number.isFinite(ipp.lon) && Math.abs(ipp.lon) <= 180)) throw new Error('invalid position');
+      this.db.run('UPDATE incidents SET ipp_lat = ?, ipp_lon = ?, ipp_label = ?, ipp_set_at = ? WHERE id = ?', ipp.lat, ipp.lon, ipp.label?.trim().slice(0, 80) || null, now(), incidentId);
+    } else {
+      this.db.run('UPDATE incidents SET ipp_lat = NULL, ipp_lon = NULL, ipp_label = NULL, ipp_set_at = NULL WHERE id = ?', incidentId);
+    }
+    this.changed();
+    return toIncident(this.incidentById(incidentId)!, this.subjects);
+  }
+
+  /** Subject details changed: bump the snapshot so phones refetch. */
+  subjectChanged(): void {
+    this.changed();
   }
 
   openIncident(): IncidentRow | undefined {
@@ -79,7 +129,7 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   listIncidents(limit = 50): SearchIncident[] {
-    return this.db.all<IncidentRow>('SELECT * FROM incidents ORDER BY started_at DESC LIMIT ?', Math.min(limit, 500)).map(toIncident);
+    return this.db.all<IncidentRow>('SELECT * FROM incidents ORDER BY started_at DESC LIMIT ?', Math.min(limit, 500)).map((r) => toIncident(r, this.subjects));
   }
 
   // ------------------------------------------------------------ responses
@@ -116,7 +166,10 @@ export class SearchService extends EventEmitter implements TrackContext {
     const idx = this.cfg.search.teamNames.indexOf(teamName);
     const colour = this.cfg.search.teamColours[(idx >= 0 ? idx : existing.length) % this.cfg.search.teamColours.length];
     const t = now();
-    const r = this.db.run('INSERT INTO teams (incident_id, name, colour, search_width_m, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', incidentId, teamName, colour, this.cfg.search.defaultSearchWidthM, t, t);
+    // Sweep width: narrower after sunset (torchlight). Adjustable per team afterwards.
+    const daylight = this.store.getData().sun?.isDaylight ?? true;
+    const width = daylight ? this.cfg.search.defaultSearchWidthM : this.cfg.search.nightSearchWidthM;
+    const r = this.db.run('INSERT INTO teams (incident_id, name, colour, search_width_m, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', incidentId, teamName, colour, width, t, t);
     this.changed();
     return this.team(r.lastInsertRowid)!;
   }
@@ -295,7 +348,7 @@ export class SearchService extends EventEmitter implements TrackContext {
       const m = members.get(f.userId);
       latest[f.userId] = { ...f, teamId: m?.teamId, callsign: m?.callsign ?? f.callsign };
     }
-    return { incident: toIncident(inc), responders: this.responders(inc.id), teams: this.teams(inc.id), targets: this.targets(inc.id), latest, updatedAt: now() };
+    return { incident: toIncident(inc, this.subjects), responders: this.responders(inc.id), teams: this.teams(inc.id), targets: this.targets(inc.id), latest, updatedAt: now() };
   }
 
   // ------------------------------------------------------------ TrackContext
@@ -382,8 +435,25 @@ function clampPriority(p: number | undefined): number {
   return Number.isFinite(n) ? Math.min(3, Math.max(1, Math.round(n))) : 2;
 }
 
-function toIncident(r: IncidentRow): SearchIncident {
-  return { id: r.id, text: r.text, receivedAt: r.received_at, lat: r.lat ?? undefined, lon: r.lon ?? undefined, source: r.source ?? undefined, startedAt: r.started_at, endedAt: r.ended_at ?? undefined };
+function finite(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function toIncident(r: IncidentRow, subjects: Subjects): SearchIncident {
+  const ipp: PlanningPoint | undefined = r.ipp_lat !== null && r.ipp_lon !== null ? { lat: r.ipp_lat, lon: r.ipp_lon, label: r.ipp_label ?? undefined, setAt: r.ipp_set_at ?? r.started_at } : undefined;
+  return {
+    id: r.id,
+    kind: r.kind ?? 'callout',
+    text: r.text,
+    receivedAt: r.received_at,
+    lat: r.lat ?? undefined,
+    lon: r.lon ?? undefined,
+    source: r.source ?? undefined,
+    startedAt: r.started_at,
+    endedAt: r.ended_at ?? undefined,
+    ipp,
+    subjectUpdatedAt: subjects.updatedAt(r.id),
+  };
 }
 
 function toTarget(r: TargetRow): Target {

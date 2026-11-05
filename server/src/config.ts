@@ -27,7 +27,9 @@ export interface AppConfig {
     enabled: boolean;
     maxAccuracyM: number;
     trackGapSec: number;
+    /** Team sweep width defaults: daylight / after sunset (metres). Adjustable per team. */
     defaultSearchWidthM: number;
+    nightSearchWidthM: number;
     teamNames: string[];
     teamColours: string[];
     owntracksFriends: boolean;

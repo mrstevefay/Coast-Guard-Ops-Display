@@ -13,6 +13,7 @@ body.m * { box-sizing: border-box; }
 .m .mode-tag { font-size: 12px; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.1em; font-weight: 800; }
 .m .mode-callout { background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
 .m .mode-standby { background: var(--panel-2); color: var(--green); border: 1px solid var(--green); }
+.m .mode-tasking { background: var(--panel-2); color: var(--amber); border: 1px solid var(--amber); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 #page { flex: 1; padding: 12px 12px calc(76px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; }
 .tabs { position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(6, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
@@ -71,7 +72,18 @@ body.callout .tabs a[data-tab='status'] { color: var(--red); }
 /* ---- status page ---- */
 .mode-row { display: flex; align-items: center; gap: 12px; }
 .elapsed-s { font-size: 34px; font-weight: 900; color: var(--red); letter-spacing: 0.02em; }
+.elapsed-s.tasking { color: var(--amber); }
 .incident-card { border-color: var(--red); background: #2a0f12; }
+.incident-card.tasking { border-color: var(--amber); background: #261c08; }
+.ipp-row { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.12); }
+.ipp-row b { color: var(--yellow); }
+.subject-card { border-color: var(--yellow); }
+.subject-head { display: flex; gap: 12px; align-items: flex-start; }
+.subject-head img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); flex: none; }
+.subject-name { font-size: 20px; font-weight: 800; }
+.subject-flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.subject-kv div { padding: 6px 0; border-top: 1px solid var(--line); }
+.subject-kv span { display: block; font-size: 11px; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
 .inc-text-m { font-size: 20px; font-weight: 700; line-height: 1.25; margin: 6px 0; }
 .respond .eta-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 10px 0; font-size: 13px; }
 .respond-state { display: flex; align-items: center; gap: 10px; font-size: 18px; }
@@ -114,6 +126,7 @@ details summary { cursor: pointer; padding: 8px 0; color: var(--muted); }
 .m .map-label-incident { font-size: 13px; padding: 1px 6px; }
 .m .map-label-ring { display: none; }
 .map-label-team { font-size: 12px; color: #fff; background: var(--team, #9fb3c8); padding: 1px 6px; border-radius: 4px; text-shadow: none; }
+.m .map-label-ipp { font-size: 12px; padding: 1px 6px; }
 .map-label-target { font-size: 12px; color: var(--team, #9fb3c8); }
 .map-label-target.done { opacity: 0.5; text-decoration: line-through; }
 

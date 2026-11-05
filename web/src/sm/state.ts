@@ -10,8 +10,10 @@ export interface ConsoleState {
   loadedIncidentId?: string;
   fixTimes: number[];
   selected: Set<number>;
-  tab: 'responders' | 'teams' | 'targets';
-  layers: { tracks: boolean; coverage: boolean; targets: boolean; ais: boolean; labels: boolean; follow: boolean };
+  tab: 'responders' | 'teams' | 'targets' | 'subject';
+  layers: { tracks: boolean; coverage: boolean; targets: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  /** Next map click sets the planning point. */
+  pickingIpp: boolean;
   editingTargetId?: number;
   /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>). */
   view: 'ops' | 'settings';
@@ -27,7 +29,8 @@ class ConsoleStore {
     fixTimes: [],
     selected: new Set(),
     tab: 'responders',
-    layers: { tracks: true, coverage: true, targets: true, ais: false, labels: true, follow: false },
+    layers: { tracks: true, coverage: true, targets: true, ais: false, labels: true, topo: false, follow: false },
+    pickingIpp: false,
     view: 'ops',
     section: 'users',
   };

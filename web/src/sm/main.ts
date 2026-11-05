@@ -127,6 +127,15 @@ function render(): void {
         onEdited: async (id, geometry) => { await patch(`/api/targets/${id}`, { geometry }); },
         onModeChange: (mode) => { cs.s.editingTargetId = mode === 'select' ? drawing?.editingTargetId : undefined; renderDrawHint(mode); cs.notify(); },
       });
+      // Planning point: one click on the map while armed.
+      map!.getMap()!.on('click', (e) => {
+        if (!cs.s.pickingIpp) return;
+        const inc = cs.s.search?.incident;
+        setPickingIpp(false);
+        if (!inc) return;
+        const label = prompt('Label for the planning point (optional, e.g. "Car park" or "LKP")', cs.s.search?.incident?.ipp?.label ?? '') ?? '';
+        patch(`/api/incidents/${inc.id}`, { ipp: { lat: e.lngLat.lat, lon: e.lngLat.lng, label } }).then(() => toast('Planning point set'), (err) => toast(err instanceof Error ? err.message : 'failed', true));
+      });
       applyLayers();
     });
   }
@@ -141,30 +150,49 @@ function render(): void {
     editTarget: (t) => drawing?.editTarget(t),
     stopEditing: () => drawing?.stopEditing(),
     drawMode: () => drawing?.mode ?? 'static',
+    pickIpp: () => setPickingIpp(!cs.s.pickingIpp),
   });
   renderLayers();
   renderStatus();
   if (cs.s.layers.follow && cs.s.search?.incident) map.fitAll(s, cs.s.search);
 }
 
+function setPickingIpp(on: boolean): void {
+  cs.s.pickingIpp = on;
+  document.getElementById('sm-map-wrap')?.classList.toggle('picking', on);
+  const hint = document.getElementById('draw-hint');
+  if (hint && on) {
+    hint.textContent = 'Click the map to set the search planning point (Esc to cancel)';
+    hint.style.display = 'block';
+  } else if (hint && !on && drawing?.mode === 'static') hint.style.display = 'none';
+  cs.notify();
+}
+
 function renderTop(): void {
   const s = cs.s.state;
-  const inc = cs.s.search?.incident ?? (s?.mode.mode === 'callout' ? s.mode.incident : undefined);
+  const searchInc = cs.s.search?.incident;
+  const callout = s?.mode.mode === 'callout' ? s.mode.incident : undefined;
+  const inc = searchInc ?? callout;
   const el = document.getElementById('sm-incident');
   const actions = document.getElementById('sm-actions');
   if (!el || !actions) return;
   if (inc) {
-    el.innerHTML = `<span class="mode-tag mode-callout">CALLOUT</span><span class="elapsed">${fmtElapsed(Date.now() - Date.parse(inc.receivedAt))}</span><span class="inc-txt" title="${esc(inc.text)}">${esc(inc.text)}</span><span class="muted">${fmtTime(inc.receivedAt)}</span>`;
-    if (!actions.dataset.mode || actions.dataset.mode !== 'callout') {
-      actions.dataset.mode = 'callout';
-      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><button class="btn-sm danger" id="standdown">Stand down</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
-      actions.querySelector('#standdown')!.addEventListener('click', async () => { if (confirm('Stand down this incident? Teams are stood down and tracking stops.')) await post(`/api/incidents/${inc.id}/close`); });
+    const tasking = searchInc?.kind === 'tasking' && !callout;
+    const startedAt = tasking ? searchInc!.startedAt : inc.receivedAt;
+    el.innerHTML = `<span class="mode-tag ${tasking ? 'mode-tasking' : 'mode-callout'}">${tasking ? 'TASKING' : 'CALLOUT'}</span><span class="elapsed ${tasking ? 'tasking' : ''}">${fmtElapsed(Date.now() - Date.parse(startedAt))}</span><span class="inc-txt" title="${esc(inc.text)}">${esc(inc.text)}</span><span class="muted">${fmtTime(startedAt)}</span>`;
+    const modeKey = `${tasking ? 'tasking' : 'callout'}:${inc.id}`;
+    if (actions.dataset.mode !== modeKey) {
+      actions.dataset.mode = modeKey;
+      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      actions.querySelector('#standdown')!.addEventListener('click', async () => {
+        if (confirm(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.')) await post(`/api/incidents/${inc.id}/close`);
+      });
     }
   } else {
-    el.innerHTML = `<span class="mode-tag mode-standby">STANDBY</span><span class="muted">No open incident</span>`;
+    el.innerHTML = `<span class="mode-tag mode-standby">STANDBY</span><span class="muted">No open tasking</span>`;
     if (actions.dataset.mode !== 'standby') {
       actions.dataset.mode = 'standby';
-      actions.innerHTML = `<button class="btn-sm primary" id="new-incident">New incident</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      actions.innerHTML = `<button class="btn-sm primary" id="new-incident">New tasking</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
       actions.querySelector('#new-incident')!.addEventListener('click', () => openIncidentModal());
     }
   }
@@ -188,6 +216,7 @@ function applyLayers(): void {
   for (const id of ['targets-fill', 'targets-line', 'targets-point'] as const) map.setLayerVisible(id, L.targets);
   map.setLayerVisible('ais-dot', L.ais);
   map.setLayerVisible('labels', L.labels);
+  map.setLayerVisible('topo', L.topo);
 }
 
 function renderDrawHint(mode: string): void {
@@ -276,20 +305,26 @@ function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
 }
 
 function openIncidentModal(): void {
-  const root = modal(`<h3>Start an incident</h3>
+  const root = modal(`<h3>New tasking</h3>
+    <p class="muted">Opens the search (responders, teams, targets, tracking) for the crew app and this console. The TV stays in standby and nobody is paged unless you tick the callout box.</p>
     <form id="if">
-      <label>Pager / callout text <textarea name="text" rows="4" required placeholder="Paste the pager message"></textarea></label>
+      <label>Tasking title / details <textarea name="text" rows="3" required placeholder="e.g. Missing walker, Howth Head cliff path — request from Gardaí"></textarea></label>
       <label>Position (optional) <input name="pos" placeholder="53.4105, -6.0550" /></label>
-      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm danger">CALLOUT</button></div>
+      <label class="check"><input type="checkbox" name="callout" /> Also raise a <b>callout</b>: TV to callout mode, crew app alert, auto stand-down timer (as the pager does)</label>
+      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary" id="start">Start tasking</button></div>
     </form>`);
   root.querySelector('#cancel')!.addEventListener('click', closeModal);
+  const cb = root.querySelector<HTMLInputElement>('input[name=callout]')!;
+  const start = root.querySelector<HTMLButtonElement>('#start')!;
+  cb.addEventListener('change', () => { start.textContent = cb.checked ? 'CALLOUT' : 'Start tasking'; start.className = `btn-sm ${cb.checked ? 'danger' : 'primary'}`; });
   root.querySelector<HTMLFormElement>('#if')!.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const f = new FormData(ev.target as HTMLFormElement);
     const pos = String(f.get('pos') ?? '').split(',').map((x) => Number(x.trim()));
     try {
-      await post('/api/incidents', { text: f.get('text'), lat: pos.length === 2 && Number.isFinite(pos[0]) ? pos[0] : undefined, lon: pos.length === 2 && Number.isFinite(pos[1]) ? pos[1] : undefined });
+      await post('/api/incidents', { text: f.get('text'), callout: cb.checked, lat: pos.length === 2 && Number.isFinite(pos[0]) ? pos[0] : undefined, lon: pos.length === 2 && Number.isFinite(pos[1]) ? pos[1] : undefined });
       closeModal();
+      cs.s.tab = 'responders';
     } catch (e) {
       toast(e instanceof Error ? e.message : 'failed', true);
     }
@@ -300,6 +335,7 @@ function onKey(ev: KeyboardEvent): void {
   if ((ev.target as HTMLElement).matches('input, textarea, select')) return;
   const k = ev.key.toLowerCase();
   if (k === 'escape' && modalOpen()) return closeModal();
+  if (k === 'escape' && cs.s.pickingIpp) return setPickingIpp(false);
   if (cs.s.view !== 'ops' || !drawing) return;
   if (k === 'escape') drawing.stopEditing();
   else if (k === 'p') drawing.setMode('point');

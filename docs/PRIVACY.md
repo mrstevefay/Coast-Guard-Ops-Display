@@ -31,3 +31,21 @@ phone at any time under *More → Phones*, which stops tracking immediately.
 
 **Security**: the service runs on a single server with TLS, authenticated access, per-user
 accounts, and nightly backups kept on the same server plus the hosting provider's backups.
+
+## Subject details (who the search is for)
+
+The search manager can record details of the person being searched for: name, sex, age,
+clothing and description, significant locations, relevant history, whether they are
+despondent, have mental health concerns or previous self-harm (and the means), and a recent
+photo. This is special-category personal data about a third party, held only as long as the
+incident record and only to run the search.
+
+- **Who sees it:** logged-in crew (members, search managers, admins) on the Status page of the
+  crew app and in the console. It is **never** sent to display keys, so the station TV cannot
+  show it, and it is not in the WebSocket snapshot: phones fetch it over an authenticated
+  request when it changes.
+- **Audit:** the audit log records that the subject record changed and which fields, never the
+  values.
+- **Retention:** the record and photo are deleted with the incident. Admins can remove the
+  photo at any time (console → Subject → Remove photo).
+- **Crew:** do not screenshot or forward these details; they are for the search only.

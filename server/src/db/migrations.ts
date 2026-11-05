@@ -147,4 +147,31 @@ export const MIGRATIONS: string[] = [
     value TEXT
   );
   `,
+  // 2 — taskings, search planning point, subject details
+  `
+  ALTER TABLE incidents ADD COLUMN kind TEXT NOT NULL DEFAULT 'callout';
+  ALTER TABLE incidents ADD COLUMN ipp_lat REAL;
+  ALTER TABLE incidents ADD COLUMN ipp_lon REAL;
+  ALTER TABLE incidents ADD COLUMN ipp_label TEXT;
+  ALTER TABLE incidents ADD COLUMN ipp_set_at TEXT;
+
+  CREATE TABLE incident_subjects (
+    incident_id TEXT PRIMARY KEY REFERENCES incidents(id) ON DELETE CASCADE,
+    name TEXT,
+    sex TEXT,
+    age INTEGER,
+    clothing TEXT,
+    description TEXT,
+    locations TEXT,
+    history TEXT,
+    despondent INTEGER NOT NULL DEFAULT 0,
+    mental_health INTEGER NOT NULL DEFAULT 0,
+    self_harm INTEGER NOT NULL DEFAULT 0,
+    self_harm_means TEXT,
+    photo_mime TEXT,
+    photo_updated_at TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by INTEGER
+  );
+  `,
 ];

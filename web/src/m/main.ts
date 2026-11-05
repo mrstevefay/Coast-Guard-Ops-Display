@@ -86,7 +86,8 @@ function buildShell(): void {
 function renderHeader(): void {
   const s = store.s.state;
   const mode = document.getElementById('m-mode');
-  if (mode) mode.innerHTML = s?.mode.mode === 'callout' ? '<span class="mode-tag mode-callout">CALLOUT</span>' : '';
+  const tasking = s?.mode.mode !== 'callout' && store.s.search?.incident?.kind === 'tasking';
+  if (mode) mode.innerHTML = s?.mode.mode === 'callout' ? '<span class="mode-tag mode-callout">CALLOUT</span>' : tasking ? '<span class="mode-tag mode-tasking">TASKING</span>' : '';
   const conn = document.getElementById('m-conn');
   if (conn) conn.textContent = store.s.connected ? '' : 'offline';
   document.body.classList.toggle('callout', s?.mode.mode === 'callout');

@@ -45,7 +45,7 @@ describe('search service and routes', () => {
   it('a manager starts an incident from the app; responses are rejected for members until then', async () => {
     const denied = await t.app.inject({ method: 'POST', url: '/api/incidents', headers: { cookie: member, ...sfs }, payload: { text: 'nope' } });
     expect(denied.statusCode).toBe(403);
-    const res = await t.app.inject({ method: 'POST', url: '/api/incidents', headers: { cookie: manager, ...sfs }, payload: { text: 'Kayaker in difficulty off Ireland’s Eye', lat: 53.41, lon: -6.06 } });
+    const res = await t.app.inject({ method: 'POST', url: '/api/incidents', headers: { cookie: manager, ...sfs }, payload: { text: 'Kayaker in difficulty off Ireland’s Eye', lat: 53.41, lon: -6.06, callout: true } });
     expect(res.statusCode).toBe(200);
     incidentId = json(res).incident.id;
     expect(t.store.getMode().mode).toBe('callout');
