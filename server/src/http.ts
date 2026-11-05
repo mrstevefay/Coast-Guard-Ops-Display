@@ -189,6 +189,7 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
         app.addHook('onClose', async () => {
           search.off('change', push);
           if (pending) clearTimeout(pending);
+          search.dispose();
         });
       }
     }

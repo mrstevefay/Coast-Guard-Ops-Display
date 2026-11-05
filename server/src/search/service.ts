@@ -340,14 +340,29 @@ export class SearchService extends EventEmitter implements TrackContext {
     /* positions alone don't change the muster panel; hook kept for later */
   }
 
+  private disposed = false;
   private changed(): void {
+    if (this.disposed) return;
     this.emit('change');
     if (this.musterTimer) return;
     this.musterTimer = setTimeout(() => {
       this.musterTimer = undefined;
-      this.store.merge({ muster: this.musterState() });
+      if (this.disposed) return;
+      try {
+        this.store.merge({ muster: this.musterState() });
+      } catch {
+        /* DB closed during shutdown */
+      }
     }, 100);
     this.musterTimer.unref?.();
+  }
+
+  /** Stop timers and listeners (server shutdown / tests) before the DB is closed. */
+  dispose(): void {
+    this.disposed = true;
+    if (this.musterTimer) clearTimeout(this.musterTimer);
+    this.musterTimer = undefined;
+    this.removeAllListeners();
   }
 
   private requireOpen(incidentId: string): IncidentRow {
