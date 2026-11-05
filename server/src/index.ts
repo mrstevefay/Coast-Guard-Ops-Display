@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { Audit } from './audit.js';
+import { Sessions } from './auth/sessions.js';
 import { Users } from './auth/users.js';
 import { CalloutManager } from './callout.js';
 import { loadConfig } from './config.js';
@@ -18,15 +20,22 @@ async function main() {
   // Phase 2: SQLite (accounts, devices, search). Always opened; routes only mount when auth is on.
   const db = openDb(process.env.DB_FILE ?? path.join(cfg.server.dataDir, 'ops.db'));
   const users = new Users(db);
+  const sessions = new Sessions(db, cfg.auth.sessionDays);
+  const audit = new Audit(db);
   if (users.bootstrapAdmin(cfg.auth.adminEmail, cfg.auth.adminPassword, cfg.auth.adminName)) {
     console.log(`bootstrap: created admin ${cfg.auth.adminEmail} (must change password on first login)`);
+  }
+  if (!cfg.auth.open && users.count() === 0) {
+    console.warn('auth is on but there are no users: set ADMIN_EMAIL and ADMIN_PASSWORD for the first start');
   }
 
   const ctx: ProviderContext = { config: cfg, log: logStub, current: () => store.getData() };
   const scheduler = new Scheduler(store, ctx);
   for (const p of buildProviders(cfg)) scheduler.add(p);
 
-  const app = await buildServer(cfg, store, callout, scheduler, { db, users });
+  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit });
+  const purge = setInterval(() => sessions.purgeExpired(), 3600_000);
+  purge.unref?.();
   // Route provider logs through fastify's pino logger now that it exists.
   ctx.log = {
     info: (o, m) => app.log.info(o as object, m),

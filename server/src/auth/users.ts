@@ -56,6 +56,13 @@ export class Users {
     return this.db.all<UserRow>('SELECT * FROM users ORDER BY active DESC, name COLLATE NOCASE');
   }
 
+  /** Active (non-revoked) device count per user. */
+  deviceCounts(): Map<number, number> {
+    const m = new Map<number, number>();
+    for (const r of this.db.all<{ user_id: number; n: number }>('SELECT user_id, COUNT(*) n FROM devices WHERE revoked_at IS NULL GROUP BY user_id')) m.set(r.user_id, r.n);
+    return m;
+  }
+
   create(input: { email: string; name: string; callsign?: string; role: Role; password?: string; mustChange?: boolean }): { user: UserRow; tempPassword?: string } {
     const email = input.email.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) throw new Error('invalid email');

@@ -396,4 +396,5 @@ export interface DashboardState extends DashboardData {
 
 export type WsMessage =
   | { type: 'state'; state: DashboardState }
-  | { type: 'ping'; t: number };
+  | { type: 'ping'; t: number }
+  | { type: 'auth'; ok: boolean; principal?: Principal };

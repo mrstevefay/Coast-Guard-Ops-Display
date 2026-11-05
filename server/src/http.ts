@@ -2,16 +2,23 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import type { WsMessage } from '../../shared/types.js';
+import type { Audit } from './audit.js';
+import { requireAuth, resolvePrincipal, type AuthCtx } from './auth/middleware.js';
 import { timingSafeEqualStr } from './auth/password.js';
+import { authRoutes } from './auth/routes.js';
+import type { Sessions } from './auth/sessions.js';
 import type { Users } from './auth/users.js';
 import type { CalloutManager, CalloutRequest } from './callout.js';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/index.js';
 import type { Scheduler } from './scheduler.js';
 import type { StateStore } from './state.js';
+import { Hub } from './ws.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,37 +30,66 @@ export function findWebDist(): string | undefined {
 export interface ServerDeps {
   db: Db;
   users: Users;
+  sessions: Sessions;
+  audit: Audit;
 }
 
-export async function buildServer(cfg: AppConfig, store: StateStore, callout: CalloutManager, scheduler: Scheduler, deps?: ServerDeps): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' }, disableRequestLogging: true });
-  app.decorate('deps', deps);
+export interface BuiltServer {
+  app: FastifyInstance;
+  hub: Hub;
+}
+
+export async function buildServer(cfg: AppConfig, store: StateStore, callout: CalloutManager, scheduler: Scheduler, deps: ServerDeps): Promise<BuiltServer> {
+  const app = Fastify({
+    logger: { level: process.env.LOG_LEVEL ?? 'info' },
+    disableRequestLogging: true,
+    trustProxy: true, // Caddy in front on the VPS
+  });
+  const auth: AuthCtx = { cfg, sessions: deps.sessions, users: deps.users };
+
+  await app.register(fastifyCookie);
+  await app.register(fastifyHelmet, {
+    // The TV/mobile pages load map tiles and fonts cross-origin and MapLibre uses
+    // blob workers; a strict CSP is a later hardening step.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+  await app.register(fastifyRateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: ['127.0.0.1', '::1'] });
   await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } });
 
-  // ---- auth for mutating endpoints (Phase 2 WhatsApp bridge uses these) ----
-  const requireToken = (req: FastifyRequest, reply: FastifyReply): boolean => {
+  // ---- legacy bearer token (pager / WhatsApp bridge) OR a manager session ----
+  const requireTokenOrManager = (req: FastifyRequest, reply: FastifyReply): boolean => {
     const token = cfg.callout.token;
-    if (!token) {
+    const authz = req.headers.authorization ?? '';
+    const given = authz.startsWith('Bearer ') ? authz.slice(7) : (req.headers['x-api-token'] as string | undefined) ?? '';
+    if (token && given && timingSafeEqualStr(given, token)) return true;
+    const p = resolvePrincipal(auth, req);
+    if (p?.kind === 'user' && (p.role === 'manager' || p.role === 'admin')) {
+      req.principal = p;
+      return true;
+    }
+    // Open mode (Pi on the LAN): only the bridge token can trigger a callout.
+    if (p?.kind === 'open' && !token) {
       reply.code(503).send({ error: 'callout endpoints disabled: CALLOUT_TOKEN not configured' });
       return false;
     }
-    const auth = req.headers.authorization ?? '';
-    const given = auth.startsWith('Bearer ') ? auth.slice(7) : (req.headers['x-api-token'] as string | undefined) ?? '';
-    if (!given || !timingSafeEqualStr(given, token)) {
-      reply.code(401).send({ error: 'unauthorised' });
-      return false;
-    }
-    return true;
+    reply.code(401).send({ error: 'unauthorised' });
+    return false;
   };
 
-  app.get('/api/state', async () => store.get());
-  app.get('/api/mode', async () => store.getMode());
+  // ---- read-only state: display keys, any user, or everyone in open mode ----
+  const readAuth = requireAuth(auth, 'display');
+  app.get('/api/state', { preHandler: readAuth }, async () => store.get());
+  app.get('/api/mode', { preHandler: readAuth }, async () => store.getMode());
 
-  app.post<{ Body: CalloutRequest }>('/api/callout', async (req, reply) => {
-    if (!requireToken(req, reply)) return;
+  app.post<{ Body: CalloutRequest }>('/api/callout', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    if (!requireTokenOrManager(req, reply)) return;
     try {
       const body = (req.body ?? {}) as CalloutRequest;
-      return callout.callout(body);
+      const mode = callout.callout({ ...body, source: body.source ?? (req.principal?.kind === 'user' ? 'app' : 'api') });
+      deps.audit.log(req.principal, req.ip, 'callout.started', { type: 'incident', id: mode.incident?.id ?? '' });
+      return mode;
     } catch (e) {
       reply.code(400);
       return { error: e instanceof Error ? e.message : String(e) };
@@ -61,12 +97,13 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
   });
 
   app.post('/api/standdown', async (req, reply) => {
-    if (!requireToken(req, reply)) return;
-    return callout.standdown('api');
+    if (!requireTokenOrManager(req, reply)) return;
+    deps.audit.log(req.principal, req.ip, 'callout.standdown');
+    return callout.standdown(req.principal?.kind === 'user' ? 'app' : 'api');
   });
 
   app.post<{ Querystring: { provider?: string } }>('/api/refresh', async (req, reply) => {
-    if (!requireToken(req, reply)) return;
+    if (!requireTokenOrManager(req, reply)) return;
     await scheduler.pollNow(req.query.provider);
     return { ok: true };
   });
@@ -78,40 +115,25 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     const degraded = enabled.filter((p) => p.status === 'stale');
     const status = bad.length === enabled.length && enabled.length > 0 ? 'down' : bad.length || degraded.length ? 'degraded' : 'ok';
     reply.code(status === 'down' ? 503 : 200);
-    return { status, mode: store.getMode().mode, uptimeSec: Math.round(process.uptime()), providers };
+    // Provider detail only for authenticated callers when accounts are on.
+    const detail = cfg.auth.open || resolvePrincipal(auth, _req) ? { providers } : {};
+    return { status, mode: store.getMode().mode, uptimeSec: Math.round(process.uptime()), db: deps.db.version > 0 ? 'ok' : 'missing', wsClients: hub.size, ...detail };
   });
 
-  // ---- WebSocket push: full state on connect and on every (throttled) change ----
-  const clients = new Set<import('ws').WebSocket>();
-  let pending: NodeJS.Timeout | undefined;
-  const broadcast = () => {
-    if (pending) return;
-    pending = setTimeout(() => {
-      pending = undefined;
-      const msg: WsMessage = { type: 'state', state: store.get() };
-      const payload = JSON.stringify(msg);
-      for (const c of clients) if (c.readyState === c.OPEN) c.send(payload);
-    }, 250);
-  };
-  store.on('change', broadcast);
-  const heartbeat = setInterval(() => {
-    const payload = JSON.stringify({ type: 'ping', t: Date.now() } satisfies WsMessage);
-    for (const c of clients) if (c.readyState === c.OPEN) c.send(payload);
-  }, 20_000);
-  heartbeat.unref?.();
+  // ---- accounts (only when auth is on; in open mode nobody has an identity) ----
+  if (!cfg.auth.open) {
+    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit }));
+  } else {
+    app.get('/api/auth/me', async () => ({ principal: { kind: 'open' } }));
+  }
 
-  app.get('/api/ws', { websocket: true }, (socket) => {
-    clients.add(socket);
-    socket.send(JSON.stringify({ type: 'state', state: store.get() } satisfies WsMessage));
-    socket.on('close', () => clients.delete(socket));
-    socket.on('error', () => clients.delete(socket));
-  });
+  // ---- WebSocket hub ----
+  const hub = new Hub(store, auth);
+  hub.register(app);
 
   // ---- static frontend ----
   const dist = findWebDist();
   if (dist) {
-    // wildcard:true serves whatever is in dist *now* (hashed assets change on
-    // every build); anything unmatched falls through to index.html below.
     await app.register(fastifyStatic, {
       root: dist,
       prefix: '/',
@@ -121,8 +143,12 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
       },
     });
     app.setNotFoundHandler((req, reply) => {
-      if (req.raw.url?.startsWith('/api/')) return reply.code(404).send({ error: 'not found' });
+      const url = req.raw.url ?? '/';
+      if (url.startsWith('/api/') || url.startsWith('/ot')) return reply.code(404).send({ error: 'not found' });
       reply.header('cache-control', 'no-cache');
+      // Multi-page app: /m/... → crew PWA, /sm/... → search manager console, else TV.
+      if (url.startsWith('/m/') || url === '/m') return reply.sendFile('m/index.html');
+      if (url.startsWith('/sm/') || url === '/sm') return reply.sendFile('sm/index.html');
       return reply.sendFile('index.html');
     });
     app.log.info({ dist }, 'serving web build');
@@ -130,10 +156,5 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     app.log.warn('web/dist not found — API only (run `npm run build -w web`)');
   }
 
-  app.addHook('onClose', async () => {
-    clearInterval(heartbeat);
-    store.off('change', broadcast);
-  });
-  return app;
+  return { app, hub };
 }
-
