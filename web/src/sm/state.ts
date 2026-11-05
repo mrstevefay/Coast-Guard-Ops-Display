@@ -15,7 +15,7 @@ export interface ConsoleState {
   editingTargetId?: number;
   /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>). */
   view: 'ops' | 'settings';
-  section: 'users' | 'displays' | 'backups' | 'audit' | 'system' | 'account';
+  section: 'users' | 'displays' | 'feeds' | 'backups' | 'audit' | 'system' | 'account';
 }
 
 type Listener = () => void;

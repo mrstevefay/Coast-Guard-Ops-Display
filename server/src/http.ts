@@ -19,6 +19,7 @@ import type { CalloutManager, CalloutRequest } from './callout.js';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/index.js';
 import type { Scheduler } from './scheduler.js';
+import type { Settings } from './settings.js';
 import type { Devices } from './search/devices.js';
 import { owntracksRoutes } from './search/owntracks.js';
 import { searchRoutes } from './search/routes.js';
@@ -44,6 +45,10 @@ export interface ServerDeps {
   /** Present when accounts + search are on. */
   search?: SearchService;
   backupDir?: string;
+  /** Runtime-editable feed settings (console → Settings → Data feeds). */
+  settings?: Settings;
+  /** Rebuild one provider from the current config after a setting changed. */
+  rebuildProvider?: (name: string) => Promise<void>;
 }
 
 export interface BuiltServer {
@@ -151,6 +156,34 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
       return { file: path.basename(b.file), bytes: b.bytes, at: b.at };
     });
     app.post('/api/admin/retention', { preHandler: requireAuth(auth, 'admin') }, async () => runRetention(deps.db, cfg, { devices: deps.devices, sessions: deps.sessions, audit: deps.audit }));
+  }
+
+  // ---- admin: runtime feed settings (API keys, webcam URL) ----
+  if (deps.settings) {
+    const settings = deps.settings;
+    app.get('/api/admin/settings', { preHandler: requireAuth(auth, 'admin') }, async () => ({ settings: settings.list() }));
+    app.put<{ Body: Record<string, string | null> }>('/api/admin/settings', { preHandler: requireAuth(auth, 'admin') }, async (req, reply) => {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const providers = new Set<string>();
+      const changed: string[] = [];
+      for (const [key, value] of Object.entries(body)) {
+        const f = settings.field(key);
+        if (!f) return reply.code(400).send({ error: `unknown setting ${key}` });
+        try {
+          providers.add(settings.set(key, value === null ? null : String(value)));
+          changed.push(key);
+        } catch (e) {
+          return reply.code(400).send({ error: `${f.label}: ${e instanceof Error ? e.message : String(e)}` });
+        }
+      }
+      for (const key of changed) {
+        const f = settings.field(key)!;
+        // Never put a secret in the audit log; URLs and labels are fine.
+        deps.audit.log(req.principal, req.ip, 'settings.updated', { type: 'setting', id: key }, f.secret ? { cleared: !body[key] } : { value: body[key] ?? null });
+      }
+      for (const name of providers) await deps.rebuildProvider?.(name);
+      return { settings: settings.list(), rebuilt: [...providers] };
+    });
   }
 
   // ---- WebSocket hub ----

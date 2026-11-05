@@ -61,6 +61,7 @@ hosted server (`POST https://ops.<domain>/api/callout` with the bridge token); t
 | List backups | Settings → Backups & retention, `GET /api/admin/backups` (admin), or `docker compose exec app ls -la /app/data/backups` |
 | Audit log | Settings → Audit log (who changed what; filter by range and text) |
 | Feed health | Settings → System status (per-feed status, last success, errors) or `/healthz` |
+| AIS key, webcam URL, Dublin Bay key | Settings → Data feeds (takes effect immediately; overrides `.env` / `config.yaml`) |
 | Restore | `docker compose stop app`; `docker run --rm -v howth-cg_app-data:/d alpine sh -c 'cp /d/backups/ops-<stamp>.db /d/ops.db && rm -f /d/ops.db-wal /d/ops.db-shm'`; `docker compose start app` |
 | Retention now | Settings → Backups & retention → *Run retention now*, or `POST /api/admin/retention` (admin) |
 | Rotate the bridge token | edit `.env`, `docker compose up -d app`, update the pager bridge and the Pi |

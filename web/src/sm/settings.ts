@@ -4,13 +4,15 @@
  * (backups, retention, audit log) that had no UI, laid out for a laptop.
  */
 import type { DevicePublic, ProviderHealth, Role, UserPublic } from '../../../shared/types';
-import { ApiError, del, get, patch, post } from '../api';
+import { ApiError, del, get, patch, post, put } from '../api';
 import { esc } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, modal } from './modal';
 import { cs } from './state';
 
-export type SettingsSection = 'users' | 'displays' | 'backups' | 'audit' | 'system' | 'account';
+export type SettingsSection = 'users' | 'displays' | 'feeds' | 'backups' | 'audit' | 'system' | 'account';
+
+interface FeedSetting { key: string; label: string; help: string; provider: string; env?: string; secret: boolean; kind: 'text' | 'url'; source: 'ui' | 'env' | 'config' | 'none'; value: string; isSet: boolean }
 
 interface DisplayKey { id: string; label: string; createdAt: string; lastSeenAt?: string }
 interface BackupInfo { file: string; bytes: number; at: string }
@@ -21,6 +23,7 @@ interface Health { status: string; mode: string; uptimeSec: number; db: string; 
 const SECTIONS: { id: SettingsSection; label: string; adminOnly: boolean }[] = [
   { id: 'users', label: 'Users', adminOnly: false },
   { id: 'displays', label: 'Display keys', adminOnly: true },
+  { id: 'feeds', label: 'Data feeds', adminOnly: true },
   { id: 'backups', label: 'Backups & retention', adminOnly: true },
   { id: 'audit', label: 'Audit log', adminOnly: true },
   { id: 'system', label: 'System status', adminOnly: false },
@@ -60,7 +63,7 @@ export function renderSettings(root: HTMLElement, force = false): void {
     <div class="set-body" id="set-body"><div id="set-reveal">${reveals.get(section) ?? ''}</div><div id="set-main"><p class="muted">Loading…</p></div></div>`;
   root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => (location.hash = `#settings/${b.dataset.section}`)));
   const main = root.querySelector<HTMLElement>('#set-main')!;
-  const render = { users: usersSection, displays: displaysSection, backups: backupsSection, audit: auditSection, system: systemSection, account: accountSection }[section];
+  const render = { users: usersSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, audit: auditSection, system: systemSection, account: accountSection }[section];
   if (!allowed.some((s) => s.id === section)) main.innerHTML = '<p class="muted">Admins only.</p>';
   else render(main).catch((e) => (main.innerHTML = `<p class="note error">${esc(msg(e))}</p>`));
 }
@@ -157,6 +160,48 @@ async function displaysSection(el: HTMLElement): Promise<void> {
       del: (b) => confirmModal(`Delete key “${esc(b.dataset.label ?? '')}”?`, 'The TV using it loses access immediately.', 'Delete', async () => { await del(`/api/admin/display-keys/${b.dataset.id}`); await load(); }, true),
     });
   };
+  await load();
+}
+
+// ------------------------------------------------------------------ data feeds
+async function feedsSection(el: HTMLElement): Promise<void> {
+  const sourceBadge = (s: FeedSetting) => (s.source === 'ui' ? badge('set here', 'green') : s.source === 'env' ? badge('from .env', 'blue') : s.source === 'config' ? badge('from config.yaml', 'grey') : badge('not set', 'amber'));
+  const load = async () => {
+    let list: FeedSetting[];
+    try {
+      list = (await get<{ settings: FeedSetting[] }>('/api/admin/settings')).settings;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return void (el.innerHTML = '<div class="set-head"><h2>Data feeds</h2></div><p class="muted">This server was started without runtime settings (older build).</p>');
+      throw e;
+    }
+    el.innerHTML = `<div class="set-head"><h2>Data feeds</h2></div>
+      <p class="muted">Keys and URLs for the live feeds. A value saved here takes effect immediately (the feed is restarted) and overrides <span class="mono">.env</span> and <span class="mono">config.yaml</span>. Clear it to fall back to those. Check the result under <a href="#settings/system">System status</a>.</p>
+      <div class="set-card">
+      ${list.map((s) => `<form class="feed-row" data-key="${esc(s.key)}">
+          <div class="feed-head"><b>${esc(s.label)}</b> ${sourceBadge(s)}${s.env ? ` <span class="muted small mono">${esc(s.env)}</span>` : ''}</div>
+          <div class="muted small">${esc(s.help)}</div>
+          <div class="feed-ctl">
+            <input name="value" type="${s.secret ? 'password' : s.kind === 'url' ? 'url' : 'text'}" autocomplete="${s.secret ? 'new-password' : 'off'}" placeholder="${s.isSet ? esc(s.value) : s.secret ? 'paste key…' : s.kind === 'url' ? 'https://…' : '…'}" ${s.kind === 'url' ? 'pattern="https?://.*"' : ''} />
+            <button class="btn-sm primary" type="submit">Save</button>
+            ${s.source === 'ui' ? `<button class="btn-sm" type="button" data-act="clear" data-key="${esc(s.key)}">Clear</button>` : ''}
+            ${s.isSet && !s.secret ? `<span class="muted small">current: <span class="mono">${esc(s.value)}</span></span>` : s.isSet ? `<span class="muted small">current: <span class="mono">${esc(s.value)}</span></span>` : ''}
+          </div>
+        </form>`).join('')}
+      </div>`;
+    el.querySelectorAll<HTMLFormElement>('form.feed-row').forEach((form) => form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const value = String(new FormData(form).get('value') ?? '').trim();
+      if (!value) return toast('Enter a value, or use Clear', true);
+      save({ [form.dataset.key!]: value });
+    }));
+    wire(el, {
+      clear: (b) => confirmModal('Clear this value?', 'The feed falls back to .env / config.yaml, or is disabled if nothing is set there.', 'Clear', async () => { await put('/api/admin/settings', { [b.dataset.key!]: null }); toast('Cleared; feed restarted'); await load(); }),
+    });
+  };
+  const save = (body: Record<string, string>) => run(async () => {
+    const r = await put<{ rebuilt: string[] }>('/api/admin/settings', body);
+    toast(`Saved; ${r.rebuilt.join(', ')} feed restarted`);
+  }, load);
   await load();
 }
 

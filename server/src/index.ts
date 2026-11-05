@@ -11,6 +11,7 @@ import { buildServer } from './http.js';
 import { buildProviders } from './providers/index.js';
 import type { ProviderContext } from './providers/types.js';
 import { Scheduler } from './scheduler.js';
+import { Settings } from './settings.js';
 import { Devices } from './search/devices.js';
 import { SearchService } from './search/service.js';
 import { Tracking } from './search/tracking.js';
@@ -35,9 +36,15 @@ async function main() {
     console.warn('auth is on but there are no users: set ADMIN_EMAIL and ADMIN_PASSWORD for the first start');
   }
 
+  // Feed keys / webcam URL set from the console override env + config.yaml.
+  const settings = new Settings(db, cfg);
   const ctx: ProviderContext = { config: cfg, log: logStub, current: () => store.getData() };
   const scheduler = new Scheduler(store, ctx);
   for (const p of buildProviders(cfg)) scheduler.add(p);
+  const rebuildProvider = async (name: string) => {
+    const p = buildProviders(cfg).find((x) => x.name === name);
+    if (p) await scheduler.replace(p);
+  };
 
   // Tracking: until the search service (M3) takes over, fixes are kept as track
   // points whenever the display is in callout mode.
@@ -56,7 +63,7 @@ async function main() {
   }
 
   const backupDir = path.join(cfg.server.dataDir, 'backups');
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, backupDir });
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, backupDir, settings, rebuildProvider });
   // Nightly housekeeping at 03:30 Europe/Dublin: backup first, then retention.
   const stopNightly = scheduleDaily(3, 30, () => {
     backupDb(db, backupDir, cfg.retention.backupKeep)

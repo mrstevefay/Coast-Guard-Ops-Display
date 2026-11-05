@@ -11,6 +11,8 @@ interface Runner {
   health: ProviderHealth;
   timer?: NodeJS.Timeout;
   inFlight: boolean;
+  /** Set when the runner was replaced; a fetch still in flight must not report. */
+  dead?: boolean;
 }
 
 /**
@@ -27,6 +29,12 @@ export class Scheduler {
   constructor(private readonly store: StateStore, private readonly ctx: ProviderContext) {}
 
   add(p: Provider): void {
+    const r = this.runner(p);
+    this.runners.push(r);
+    this.store.setHealth(r.health);
+  }
+
+  private runner(p: Provider): Runner {
     const health: ProviderHealth = {
       name: p.name,
       status: !p.enabled ? 'disabled' : p.kind === 'stub' ? 'stub' : 'starting',
@@ -34,8 +42,36 @@ export class Scheduler {
       pollIntervalMs: p.pollIntervalMs,
       note: p.note,
     };
-    this.runners.push({ provider: p, health, inFlight: false });
-    this.store.setHealth(health);
+    return { provider: p, health, inFlight: false };
+  }
+
+  /**
+   * Swap a provider for a freshly built one (settings changed at runtime): stop the
+   * old loop, start the new one and poll it straight away. Health resets to 'starting'.
+   */
+  async replace(p: Provider): Promise<void> {
+    const i = this.runners.findIndex((r) => r.provider.name === p.name);
+    if (i < 0) return this.add(p);
+    const old = this.runners[i];
+    old.dead = true;
+    if (old.timer) clearTimeout(old.timer);
+    try {
+      await old.provider.stop?.();
+    } catch (e) {
+      this.ctx.log.warn({ provider: p.name, err: String(e) }, 'provider stop failed');
+    }
+    const r = this.runner(p);
+    this.runners[i] = r;
+    this.store.setHealth({ ...r.health });
+    if (this.stopped || !p.enabled) return;
+    if (p.start) {
+      try {
+        await p.start(this.ctx);
+      } catch (e) {
+        this.ctx.log.error({ provider: p.name, err: String(e) }, 'provider start failed');
+      }
+    }
+    await this.run(r);
   }
 
   async start(): Promise<void> {
@@ -95,6 +131,7 @@ export class Scheduler {
     } finally {
       r.inFlight = false;
     }
+    if (r.dead) return;
     Object.assign(r.health, p.health?.() ?? {});
     if (!oneShot && !this.stopped) {
       r.health.nextPollAt = new Date(Date.now() + delay).toISOString();
