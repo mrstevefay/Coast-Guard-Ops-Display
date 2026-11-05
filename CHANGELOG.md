@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Console settings** (`/sm/#settings/…`): all administration on the desktop: users (add,
+  edit, inline role change, reset password, deactivate, remove), display keys, backups and
+  retention (previously API-only), audit log with range and text filter, system status with
+  per-feed health, and your own account (password, privacy notice, OwnTracks phones with QR).
+  A temporary password forces the account page first. The phone app's More → Admin stays as
+  the reduced version.
+- `deploy/vultr-create.sh` + `deploy/cloud-init.yaml`: scripted Vultr VPS provisioning.
+
 ## v2.0.0 — 05/11/2026 — Phase 2
 
 - **Hosted deployment**: Docker Compose with Caddy TLS for a Vultr VPS, GHCR image on every

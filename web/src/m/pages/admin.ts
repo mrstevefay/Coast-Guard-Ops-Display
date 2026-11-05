@@ -21,7 +21,8 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       ${btn('Create', 'create', 'primary wide', 'type="submit"')}
     </form><div id="user-result"></div>`)}
     <section class="card" id="users"><h2>Users</h2>${note('Loading…')}</section>
-    <section class="card" id="keys"><h2>Display keys (TV / Pi)</h2>${note('Loading…')}</section>`;
+    <section class="card" id="keys"><h2>Display keys (TV / Pi)</h2>${note('Loading…')}</section>
+    <p class="note muted small">Full administration (users, display keys, backups, retention, audit log, system status) is in the desktop console: <a href="/sm/#settings/users">/sm/ → Settings</a>.</p>`;
   const form = root.querySelector<HTMLFormElement>('#user-form')!;
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();

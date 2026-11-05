@@ -8,6 +8,8 @@ import { renderLogin } from '../m/pages/login';
 import { toast } from '../m/ui';
 import { WsClient } from '../ws';
 import { TargetDrawing, type DrawKind } from './draw';
+import { closeModal, modal, modalOpen } from './modal';
+import { isSettingsSection, renderSettings } from './settings';
 import { renderSidebar } from './sidebar';
 import { cs } from './state';
 
@@ -52,17 +54,27 @@ function start(): void {
       <div class="sm-brand">Howth CG · Search Manager</div>
       <div id="sm-incident" class="sm-incident"></div>
       <div class="sm-actions" id="sm-actions"></div>
+      <button class="btn-sm sm-view" id="sm-view" title="Settings & administration">⚙ Settings</button>
     </header>
     <aside class="sm-side" id="sm-side"></aside>
     <main class="sm-map" id="sm-map-wrap">
       <div class="layer-panel" id="layer-panel"></div>
       <div class="draw-hint" id="draw-hint"></div>
     </main>
+    <section class="sm-settings" id="sm-settings"></section>
     <footer class="sm-status" id="sm-status"></footer>
     <div id="modal"></div>`;
   mapEl = document.createElement('div');
   mapEl.className = 'sm-map-el';
   document.getElementById('sm-map-wrap')!.prepend(mapEl);
+  document.getElementById('sm-view')!.addEventListener('click', () => {
+    location.hash = cs.s.view === 'settings' ? '#map' : `#settings/${cs.s.section}`;
+  });
+  window.addEventListener('hashchange', () => { readHash(); applyView(); });
+  // A temporary password must be replaced before anything else.
+  if (cs.s.me?.mustChangePassword) location.hash = '#settings/account';
+  readHash();
+  applyView();
 
   ws = new WsClient({
     onState: (s) => cs.onMessage({ type: 'state', state: s }),
@@ -75,6 +87,31 @@ function start(): void {
   cs.subscribe(render);
   document.addEventListener('keydown', onKey);
   setInterval(() => renderTop(), 1000);
+}
+
+// ---------------------------------------------------------------- views
+/** #settings/<section> opens the administration pages; anything else is the map. */
+function readHash(): void {
+  const m = /^#settings(?:\/([a-z]+))?/.exec(location.hash);
+  cs.s.view = m ? 'settings' : 'ops';
+  if (m && isSettingsSection(m[1])) cs.s.section = m[1];
+}
+
+function applyView(): void {
+  const settings = cs.s.view === 'settings';
+  const wasSettings = app.classList.contains('settings');
+  app.classList.toggle('settings', settings);
+  const b = document.getElementById('sm-view');
+  if (b) b.textContent = settings ? '◀ Map' : '⚙ Settings';
+  if (settings) {
+    closeModal();
+    drawing?.stopEditing();
+    // Coming from the map: reload the section so the data is fresh.
+    renderSettings(document.getElementById('sm-settings')!, !wasSettings);
+  } else {
+    // The map may have been created while hidden (page opened on #settings).
+    map?.resize();
+  }
 }
 
 // ---------------------------------------------------------------- rendering
@@ -211,16 +248,6 @@ async function ensureTracksLoaded(): Promise<void> {
 }
 
 // ---------------------------------------------------------------- modals
-function modal(html: string): HTMLElement {
-  const root = document.getElementById('modal')!;
-  root.innerHTML = `<div class="modal-bg"><div class="modal">${html}</div></div>`;
-  root.querySelector('.modal-bg')!.addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) closeModal(); });
-  return root;
-}
-function closeModal(): void {
-  document.getElementById('modal')!.innerHTML = '';
-}
-
 function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
   const teams = cs.s.search?.teams ?? [];
   const n = (cs.s.search?.targets.length ?? 0) + 1;
@@ -271,8 +298,9 @@ function openIncidentModal(): void {
 
 function onKey(ev: KeyboardEvent): void {
   if ((ev.target as HTMLElement).matches('input, textarea, select')) return;
-  if (!drawing) return;
   const k = ev.key.toLowerCase();
+  if (k === 'escape' && modalOpen()) return closeModal();
+  if (cs.s.view !== 'ops' || !drawing) return;
   if (k === 'escape') drawing.stopEditing();
   else if (k === 'p') drawing.setMode('point');
   else if (k === 'a') drawing.setMode('area');

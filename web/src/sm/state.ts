@@ -13,6 +13,9 @@ export interface ConsoleState {
   tab: 'responders' | 'teams' | 'targets';
   layers: { tracks: boolean; coverage: boolean; targets: boolean; ais: boolean; labels: boolean; follow: boolean };
   editingTargetId?: number;
+  /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>). */
+  view: 'ops' | 'settings';
+  section: 'users' | 'displays' | 'backups' | 'audit' | 'system' | 'account';
 }
 
 type Listener = () => void;
@@ -25,6 +28,8 @@ class ConsoleStore {
     selected: new Set(),
     tab: 'responders',
     layers: { tracks: true, coverage: true, targets: true, ais: false, labels: true, follow: false },
+    view: 'ops',
+    section: 'users',
   };
   private listeners = new Set<Listener>();
   private scheduled = false;
@@ -74,6 +79,9 @@ class ConsoleStore {
   }
   get isManager(): boolean {
     return this.s.me?.role === 'manager' || this.s.me?.role === 'admin';
+  }
+  get isAdmin(): boolean {
+    return this.s.me?.role === 'admin';
   }
 }
 

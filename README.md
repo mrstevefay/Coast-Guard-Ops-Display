@@ -17,7 +17,9 @@ All screenshots are real data, rendered by Playwright (`scripts/screenshot.mjs`)
 ## Phase 2 in one paragraph
 
 The same server now runs on a Vultr VPS behind Caddy (`docker-compose.yml`) with accounts
-(admin / search manager / member), a crew PWA at `/m/`, a laptop console at `/sm/`, an
+(admin / search manager / member), a crew PWA at `/m/`, a laptop console at `/sm/` (with
+**Settings** for all administration: users, display keys, backups, retention, audit log,
+system status, your account and phones), an
 OwnTracks ingest at `/ot`, and a SQLite database (`node:sqlite`, no native modules). Crew press
 *I'm responding*; their phones stream positions via OwnTracks; the search manager builds teams
 (Alpha-0, Alpha-1, …), draws point/area/line targets, and sees live positions, tracks and a
