@@ -23,7 +23,7 @@ export const placeholder = (text: string) => `<div class="placeholder">${esc(tex
 
 export function arrow(deg: number, size = 120, cls = 'wind-arrow'): string {
   // Arrow points in the direction the wind is blowing TO (from + 180).
-  return `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+  return `<svg class="${cls}" width="${size}" height="${size}" style="--arrow:${size}" viewBox="0 0 100 100" aria-hidden="true">
     <circle cx="50" cy="50" r="46" class="compass-ring"/>
     <text x="50" y="14" class="compass-n">N</text>
     <g transform="rotate(${(deg + 180) % 360} 50 50)">

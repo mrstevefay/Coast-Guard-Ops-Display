@@ -1,25 +1,28 @@
-/* Wall display layout: fixed 1920x1080 grid. */
+/* Wall display layout. Designed on a 1920x1080 grid; --u is one design pixel, derived from
+   the viewport so the layout scales to any screen (4K, 720p, laptop). On a non-16:9 screen
+   the fr tracks absorb the difference. */
 @import './components.css';
+:root { --u: min(calc(100vw / 1920), calc(100vh / 1080)); }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
+html, body { width: 100vw; height: 100vh; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
 body { cursor: none; }
-#app { display: grid; width: 1920px; height: 1080px; gap: 14px; padding: 14px; }
+#app { display: grid; width: 100%; height: 100%; gap: calc(14 * var(--u)); padding: calc(14 * var(--u)); }
 
 /* ---- standby grid ---- */
 body[data-mode='standby'] #app {
-  grid-template-columns: 490px 1fr 490px;
-  grid-template-rows: 72px 0px 1fr 184px;
+  grid-template-columns: calc(490 * var(--u)) 1fr calc(490 * var(--u));
+  grid-template-rows: calc(72 * var(--u)) 0 1fr calc(184 * var(--u));
   grid-template-areas:
     'top top top'
     'warn warn warn'
     'left map right'
     'bottom bottom bottom';
 }
-body[data-mode='standby'].has-warning #app { grid-template-rows: 72px 76px 1fr 184px; }
+body[data-mode='standby'].has-warning #app { grid-template-rows: calc(72 * var(--u)) calc(76 * var(--u)) 1fr calc(184 * var(--u)); }
 /* ---- callout grid ---- */
 body[data-mode='callout'] #app {
-  grid-template-columns: 1fr 600px;
-  grid-template-rows: 72px 236px 1fr 206px;
+  grid-template-columns: 1fr calc(600 * var(--u));
+  grid-template-rows: calc(72 * var(--u)) calc(236 * var(--u)) 1fr calc(206 * var(--u));
   grid-template-areas:
     'top top'
     'incident incident'
@@ -28,29 +31,29 @@ body[data-mode='callout'] #app {
 }
 #slot-topbar { grid-area: top; }
 .area-warn { grid-area: warn; overflow: hidden; }
-.area-left { grid-area: left; display: grid; grid-template-rows: 1fr 250px; gap: 14px; min-height: 0; }
-.area-map { grid-area: map; position: relative; border-radius: 10px; overflow: hidden; background: #0e1620; border: 2px solid var(--line); }
-.area-right { grid-area: right; display: grid; grid-auto-rows: minmax(0, 1fr); gap: 14px; min-height: 0; }
+.area-left { grid-area: left; display: grid; grid-template-rows: 1fr calc(250 * var(--u)); gap: calc(14 * var(--u)); min-height: 0; }
+.area-map { grid-area: map; position: relative; border-radius: calc(10 * var(--u)); overflow: hidden; background: #0e1620; border: 2px solid var(--line); }
+.area-right { grid-area: right; display: grid; grid-auto-rows: minmax(0, 1fr); gap: calc(14 * var(--u)); min-height: 0; }
 body[data-mode='standby'] .area-right { grid-template-rows: 1.3fr 1fr 0.95fr; }
 body[data-mode='callout'] .area-right { grid-template-rows: 1fr 1fr 0.85fr; }
 .area-incident { grid-area: incident; }
 .area-bottom { grid-area: bottom; min-height: 0; }
-.bottom-strip { display: grid; grid-template-columns: 1.6fr 0.6fr 0.9fr 0.9fr; gap: 14px; }
+.bottom-strip { display: grid; grid-template-columns: 1.6fr 0.6fr 0.9fr 0.9fr; gap: calc(14 * var(--u)); }
 .area-left > div, .area-right > div, .bottom-strip > div, .area-bottom > section { min-height: 0; min-width: 0; display: flex; }
 .area-left > div > section, .area-right > div > section, .bottom-strip > div > section { flex: 1; }
 #map { position: absolute; inset: 0; }
 
 /* ---- topbar ---- */
-.topbar { height: 72px; display: grid; grid-template-columns: 420px 1fr 420px; align-items: center; background: var(--panel); border: 2px solid var(--line); border-radius: 10px; padding: 0 24px; }
-.clock { font-size: 60px; font-weight: 800; letter-spacing: 0.02em; }
-.station { text-align: center; display: flex; justify-content: center; align-items: center; gap: 24px; }
-.station-name { font-size: 36px; font-weight: 800; letter-spacing: 0.04em; }
-.mode-tag { font-size: 26px; font-weight: 800; padding: 4px 16px; border-radius: 8px; letter-spacing: 0.1em; }
+.topbar { height: calc(72 * var(--u)); display: grid; grid-template-columns: calc(420 * var(--u)) 1fr calc(420 * var(--u)); align-items: center; background: var(--panel); border: 2px solid var(--line); border-radius: calc(10 * var(--u)); padding: 0 calc(24 * var(--u)); }
+.clock { font-size: calc(60 * var(--u)); font-weight: 800; letter-spacing: 0.02em; }
+.station { text-align: center; display: flex; justify-content: center; align-items: center; gap: calc(24 * var(--u)); }
+.station-name { font-size: calc(36 * var(--u)); font-weight: 800; letter-spacing: 0.04em; }
+.mode-tag { font-size: calc(26 * var(--u)); font-weight: 800; padding: calc(4 * var(--u)) calc(16 * var(--u)); border-radius: calc(8 * var(--u)); letter-spacing: 0.1em; }
 .mode-standby { background: var(--panel-2); color: var(--green); border: 2px solid var(--green); }
 .mode-callout { background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
-.conn { font-size: 24px; color: var(--amber); font-weight: 700; }
-.date { text-align: right; font-size: 34px; font-weight: 700; line-height: 1.05; }
-.weekday { font-size: 22px; color: var(--muted); }
+.conn { font-size: calc(24 * var(--u)); color: var(--amber); font-weight: 700; }
+.date { text-align: right; font-size: calc(34 * var(--u)); font-weight: 700; line-height: 1.05; }
+.weekday { font-size: calc(22 * var(--u)); color: var(--muted); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
 
@@ -59,6 +62,6 @@ body[data-connected='false'] .panel { opacity: 0.85; }
 
 
 /* search picture labels on the wall display */
-.map-label-team { font-size: 22px; color: #fff; background: var(--team, #9fb3c8); padding: 2px 10px; border-radius: 6px; text-shadow: none; }
-.map-label-target { font-size: 20px; color: var(--team, #9fb3c8); }
+.map-label-team { font-size: calc(22 * var(--u)); color: #fff; background: var(--team, #9fb3c8); padding: calc(2 * var(--u)) calc(10 * var(--u)); border-radius: calc(6 * var(--u)); text-shadow: none; }
+.map-label-target { font-size: calc(20 * var(--u)); color: var(--team, #9fb3c8); }
 .map-label-target.done { opacity: 0.5; text-decoration: line-through; }

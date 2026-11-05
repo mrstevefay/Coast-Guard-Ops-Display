@@ -235,8 +235,8 @@ driver is the usual thing to verify).
 3. Screen blanking off: run `kiosk/disable-screen-blanking.sh` once (handles X11 `xset`
    and Wayfire `[idle]`), and set the TV itself to never sleep / disable HDMI-CEC standby.
    `sudo apt install unclutter` hides the cursor (the page also sets `cursor: none`).
-4. Set the display to 1920×1080 (`raspi-config` → Display, or `wlr-randr`). The layout is
-   fixed at that resolution; a 4K TV should be driven at 1080p.
+4. Any resolution works: the layout is designed on a 1920×1080 grid and scales to the screen
+   (4K, 720p, ultra-wide). 1080p is still the sensible choice on a Pi for GPU headroom.
 5. Optional: `sudo raspi-config` → Boot → Desktop autologin, and a read-only root
    overlay once stable. Logs: `docker compose logs -f`.
 

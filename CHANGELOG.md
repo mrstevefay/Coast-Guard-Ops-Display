@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **TV display scales to the screen**: every size on the wall display is now `N * var(--u)`,
+  with `--u` derived from the viewport (1 design px at 1920×1080). 4K, 720p, laptops and
+  ultra-wide all render the same picture; non-16:9 screens widen the map. The crew app and
+  console are unaffected (`--u` is 1px there).
 - **One-tap OwnTracks setup**: the crew app fetches a credential for the phone it runs on and
   shows *Set up tracking on this phone* on first open; *Open OwnTracks* (or the first *I'm
   responding*) hands the full HTTP-mode configuration to the app. More → Phones gains *Send
