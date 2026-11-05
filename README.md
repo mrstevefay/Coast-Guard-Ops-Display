@@ -1,15 +1,29 @@
-# Howth Coast Guard — Ops Wall Display (Phase 1)
+# Howth Coast Guard — Ops Display, Crew App and Search Manager
 
 Full-screen wall dashboard for the Irish Coast Guard station at Howth, Co. Dublin
-(53.388 N, 6.065 W). Runs on a TV in a browser kiosk, read from ~4 m, no touch.
-Phase 1 uses public data only; Phases 2 (WhatsApp crew muster) and 3 (D4H
-availability) plug into the interfaces described at the bottom.
+(53.388 N, 6.065 W), plus (Phase 2) a hosted server with crew accounts, a mobile crew app,
+OwnTracks position tracking and a search-management console.
 
-| Standby | Callout |
+| Standby (TV) | Callout with search teams (TV) |
 | --- | --- |
-| ![standby](docs/screenshots/standby.png) | ![callout](docs/screenshots/callout.png) |
+| ![standby](docs/screenshots/standby.png) | ![callout](docs/screenshots/callout-search.png) |
 
-Both screenshots are real data, rendered at 1920×1080 by `scripts/screenshot.mjs`.
+| Crew app | Search manager console |
+| --- | --- |
+| ![crew app](docs/screenshots/mobile/11-status-responding.png) | ![console](docs/screenshots/console/05-live.png) |
+
+All screenshots are real data, rendered by Playwright (`scripts/screenshot.mjs`).
+
+## Phase 2 in one paragraph
+
+The same server now runs on a Vultr VPS behind Caddy (`docker-compose.yml`) with accounts
+(admin / search manager / member), a crew PWA at `/m/`, a laptop console at `/sm/`, an
+OwnTracks ingest at `/ot`, and a SQLite database (`node:sqlite`, no native modules). Crew press
+*I'm responding*; their phones stream positions via OwnTracks; the search manager builds teams
+(Alpha-0, Alpha-1, …), draws point/area/line targets, and sees live positions, tracks and a
+covered-area overlay. The station Pi mirrors the hosted server for the TV and falls back to
+its own feeds if the internet drops. Docs: [RUNBOOK](docs/RUNBOOK.md),
+[OWNTRACKS](docs/OWNTRACKS.md), [PRIVACY](docs/PRIVACY.md).
 
 ## What is on screen
 
@@ -99,8 +113,17 @@ Key sections: `station` (coords, name), `callout` (token, auto stand-down minute
 | POST | `/api/standdown` | Bearer | Back to standby |
 | POST | `/api/refresh?provider=name` | Bearer | Force a poll (debugging) |
 
-Auth is `Authorization: Bearer <CALLOUT_TOKEN>` (or `X-Api-Token`). With no token configured
-the mutating endpoints return 503 rather than being open.
+Auth is `Authorization: Bearer <CALLOUT_TOKEN>` (or `X-Api-Token`), or a signed-in manager's
+session. With no token configured and accounts off, the mutating endpoints return 503.
+
+**Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
+`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…` (admin); `GET|POST|DELETE /api/admin/display-keys`,
+`GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
+`GET|POST|DELETE /api/devices…`, `GET /api/devices/:id/qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
+`GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
+`PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
+`PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
+`GET /api/positions/latest`. WebSocket `/api/ws` carries `state`, `search`, `pos`, `auth`, `ping`.
 
 ```bash
 curl -X POST http://localhost:8080/api/callout -H "Authorization: Bearer $CALLOUT_TOKEN" \
@@ -126,8 +149,14 @@ server/src
   http.ts           REST + WebSocket + static frontend
   providers/        one module per source (see "Adding a provider")
   util/             erddap, xml, http, units, seaAreas
-shared/types.ts     DashboardState — shared by server and web
-web/src             vanilla TS + Vite; main.ts renders state into panels, map.ts = MapLibre
+shared/types.ts     DashboardState, SearchSnapshot, Fix… — shared by server and web
+web/src             vanilla TS + Vite; main.ts = TV, m/ = crew PWA, sm/ = console, map.ts = MapLibre
+server/src/db       node:sqlite wrapper + numbered migrations
+server/src/auth     scrypt passwords, sessions + display keys, role middleware, routes
+server/src/search   devices (OwnTracks creds), tracking, owntracks ingest, service (incidents/
+                    responses/teams/targets), routes, tracks (GeoJSON), geometry, retention
+server/src/ws.ts    Hub: per-socket principal, state/search/pos broadcast
+server/src/upstream.ts  Pi mirror of the hosted server with local fallback
 ```
 
 Failure isolation: a provider that throws keeps its last-good slice on screen, its health
@@ -209,39 +238,15 @@ driver is the usual thing to verify).
 5. Optional: `sudo raspi-config` → Boot → Desktop autologin, and a read-only root
    overlay once stable. Logs: `docker compose logs -f`.
 
-## Phase 2 / Phase 3 hooks
+## Phase 2 status and Phase 3 hooks
 
-Phase 1 was built so the next phases are additive — no rewrite.
+Implemented: hosted server, accounts, crew PWA, OwnTracks tracking, teams/targets/coverage
+console, TV integration, Pi mirror, backups, retention, audit.
 
-**Callout trigger (Phase 2, WhatsApp).** A bridge process (or a Fastify plugin inside this
-server) receives the pager/WhatsApp message and calls `POST /api/callout` with the message
-text verbatim, optional lat/lon (parse from the message or a geocode), `receivedAt` and
-`source: "whatsapp"`. `POST /api/standdown` on the "stand down" message. The in-process
-API is `CalloutManager.callout({text, lat, lon, receivedAt, source})` / `.standdown()` in
-`server/src/callout.ts`. The token is already required; use a long random
-`CALLOUT_TOKEN` and keep the bridge on the station LAN.
-
-**Crew muster (Phase 2 WhatsApp replies / Phase 3 D4H).** The display already renders the
-`muster` slice (`shared/types.ts`):
-
-```ts
-interface MusterState {
-  responders: Responder[];                // id, name, status, etaMin?, roles[], updatedAt, source
-  roles: Record<string, string[]>;        // role name → responder ids covering it
-  minimumCrew: number;                    // from config.providers.muster.minimumCrew
-  requiredRoles: string[];                // from config, e.g. OIC, Boat Cox, Crew, Crew, Driver
-  source: 'stub' | 'whatsapp' | 'd4h' | 'mixed';
-}
-```
-
-`Responder.status` ∈ `responding | available | unavailable | on-scene | unknown`. The
-panel counts `responding + on-scene` against `minimumCrew` (green when met, amber when
-short), shows each required role as filled/open, and in callout mode lists responders with
-ETA. To light it up, replace the stub in `server/src/providers/muster.ts` with a provider
-that produces this shape — e.g. a `whatsappMuster` provider fed by the same bridge
-(replies like "Y 10" → responding, ETA 10 min) and a `d4hAvailability` provider polling the
-D4H API for who is on-call. Two providers can both write `muster` by merging via
-`ctx.current().muster` (set `source: 'mixed'`). No frontend change is needed.
+Still external: the **pager/WhatsApp bridge** that turns a page into `POST /api/callout`
+(bridge token) and the **push notification** to crew phones on callout (Web Push; needs VAPID
+keys and a push subscription table). Both slot in without schema changes beyond a
+`push_subscriptions` table. D4H availability could feed `responses` with status `available`.
 
 ## Conventions
 

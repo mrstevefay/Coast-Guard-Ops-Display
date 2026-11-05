@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { Audit } from './audit.js';
+import { backupDb } from './backup.js';
+import { runRetention, scheduleDaily } from './search/retention.js';
 import { Sessions } from './auth/sessions.js';
 import { Users } from './auth/users.js';
 import { CalloutManager } from './callout.js';
@@ -53,7 +55,21 @@ async function main() {
     tracking.context = search; // responders / team members are tracked, not just "callout mode"
   }
 
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
+  const backupDir = path.join(cfg.server.dataDir, 'backups');
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, backupDir });
+  // Nightly housekeeping at 03:30 Europe/Dublin: backup first, then retention.
+  const stopNightly = scheduleDaily(3, 30, () => {
+    backupDb(db, backupDir, cfg.retention.backupKeep)
+      .then((b) => app.log.info(b, 'nightly backup'))
+      .catch((e) => app.log.error({ err: String(e) }, 'backup failed'))
+      .finally(() => {
+        try {
+          app.log.info(runRetention(db, cfg, { devices, sessions, audit }), 'retention');
+        } catch (e) {
+          app.log.error({ err: String(e) }, 'retention failed');
+        }
+      });
+  });
   // Pi: mirror the hosted server for the kiosk, fall back to local data when it is unreachable.
   const mirror = new UpstreamMirror(cfg, store, hub, { info: (o, m) => app.log.info(o as object, m), warn: (o, m) => app.log.warn(o as object, m) });
   mirror.start();
@@ -74,6 +90,7 @@ async function main() {
   const shutdown = async (sig: string) => {
     app.log.info({ sig }, 'shutting down');
     mirror.stop();
+    stopNightly();
     await scheduler.stop();
     await app.close();
     db.close();

@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.0.0 — 05/11/2026 — Phase 2
+
+- **Hosted deployment**: Docker Compose with Caddy TLS for a Vultr VPS, GHCR image on every
+  push to the default branch, SSH deploy job, runbook.
+- **Accounts**: admin / manager / member roles, scrypt passwords, 180-day sessions, display keys
+  for kiosks, CSRF guard, rate limits, audit log, SQLite via node:sqlite (no native modules).
+- **Crew app** `/m/` (installable PWA): status with *I'm responding* and ETA, weather, tide,
+  sea area forecast, map, team, phone linking for OwnTracks, admin pages.
+- **OwnTracks tracking** `/ot`: per-device credentials, one-tap config link/QR, track points
+  kept only while responding in an open incident, friends reply.
+- **Search management** `/sm/`: incidents, responders, teams with Alpha-0 callsigns, targets
+  drawn on the map (point/area/line), live positions, tracks, covered-area overlay, GeoJSON
+  export, stand-down.
+- **TV**: shows teams, targets, tracks and coverage in callout mode; live muster panel.
+- **Pi**: mirrors the hosted server with a display key, falls back to local feeds (LOCAL tag).
+- Nightly SQLite backups, retention job (tracks kept indefinitely by default), privacy notice.
+
 ## v1.1.0 — 05/11/2026
 
 - Sea State now shows the real **Dublin Bay buoy** (Irish Lights MetOcean via

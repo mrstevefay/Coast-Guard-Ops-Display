@@ -62,7 +62,9 @@ function render(s: DashboardState): void {
     set('slot-wind', s.panels.wind ? renderWind(s, true) : '');
     set('slot-tide', s.panels.tide ? renderTide(s, true) : '');
     set('slot-sun', s.panels.sun ? renderDaylight(s, true) : '');
-    set('slot-muster', s.panels.muster ? renderMuster(s, true) : s.panels.seaArea ? renderSeaArea(s, true) : '');
+    // Callout: crew muster once the app is feeding it, otherwise the Sea Area Forecast.
+    const liveMuster = s.muster?.source === 'app' && (s.panels.muster || s.muster.responders.length > 0);
+    set('slot-muster', liveMuster ? renderMuster(s, true) : s.panels.seaArea ? renderSeaArea(s, true) : s.panels.muster ? renderMuster(s, true) : '');
   } else {
     set('slot-warnings', s.panels.warnings ? renderWarnings(s) : '');
     set('slot-wind', s.panels.wind ? renderWind(s) : '');

@@ -8,6 +8,8 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import type { Audit } from './audit.js';
+import { backupDb, listBackups } from './backup.js';
+import { runRetention } from './search/retention.js';
 import { requireAuth, resolvePrincipal, type AuthCtx } from './auth/middleware.js';
 import { timingSafeEqualStr } from './auth/password.js';
 import { authRoutes } from './auth/routes.js';
@@ -41,6 +43,7 @@ export interface ServerDeps {
   tracking: Tracking;
   /** Present when accounts + search are on. */
   search?: SearchService;
+  backupDir?: string;
 }
 
 export interface BuiltServer {
@@ -126,8 +129,29 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     reply.code(status === 'down' ? 503 : 200);
     // Provider detail only for authenticated callers when accounts are on.
     const detail = cfg.auth.open || resolvePrincipal(auth, _req) ? { providers } : {};
-    return { status, mode: store.getMode().mode, uptimeSec: Math.round(process.uptime()), db: deps.db.version > 0 ? 'ok' : 'missing', wsClients: hub.size, ...detail };
+    return {
+      status,
+      mode: store.getMode().mode,
+      uptimeSec: Math.round(process.uptime()),
+      db: deps.db.version > 0 ? 'ok' : 'missing',
+      wsClients: hub.size,
+      fixesLastMin: deps.tracking.rate(),
+      ...(cfg.upstream.url ? { upstream: store.upstreamFresh ? 'live' : 'fallback' } : {}),
+      ...detail,
+    };
   });
+
+  // ---- admin: backups (any mode; admin session when accounts are on, bridge token otherwise) ----
+  if (deps.backupDir) {
+    const dir = deps.backupDir;
+    app.get('/api/admin/backups', { preHandler: requireAuth(auth, 'admin') }, async () => ({ backups: listBackups(dir).map((b) => ({ file: path.basename(b.file), bytes: b.bytes, at: b.at })) }));
+    app.post('/api/admin/backup', { preHandler: requireAuth(auth, 'admin') }, async (req) => {
+      const b = await backupDb(deps.db, dir, cfg.retention.backupKeep);
+      deps.audit.log(req.principal, req.ip, 'backup.manual', undefined, { file: path.basename(b.file), bytes: b.bytes });
+      return { file: path.basename(b.file), bytes: b.bytes, at: b.at };
+    });
+    app.post('/api/admin/retention', { preHandler: requireAuth(auth, 'admin') }, async () => runRetention(deps.db, cfg, { devices: deps.devices, sessions: deps.sessions, audit: deps.audit }));
+  }
 
   // ---- WebSocket hub ----
   const hub = new Hub(store, auth);

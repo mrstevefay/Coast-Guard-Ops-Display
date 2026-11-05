@@ -57,3 +57,8 @@ body[data-mode='callout'] .area-right { grid-template-rows: 1fr 1fr 0.85fr; }
 /* link lost: dim everything slightly */
 body[data-connected='false'] .panel { opacity: 0.85; }
 
+
+/* search picture labels on the wall display */
+.map-label-team { font-size: 22px; color: #fff; background: var(--team, #9fb3c8); padding: 2px 10px; border-radius: 6px; text-shadow: none; }
+.map-label-target { font-size: 20px; color: var(--team, #9fb3c8); }
+.map-label-target.done { opacity: 0.5; text-decoration: line-through; }
