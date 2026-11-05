@@ -12,7 +12,8 @@ COPY shared ./shared
 COPY server ./server
 COPY web ./web
 RUN npm run build -w web && npm run build -w server \
- && npm prune --omit=dev --workspace server
+ && npm prune --omit=dev --workspace server \
+ && mkdir -p server/node_modules  # may be empty once everything hoists; keeps the COPY below valid
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \
