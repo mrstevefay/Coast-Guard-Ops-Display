@@ -4,7 +4,27 @@ import { bearingDeg, distanceM, esc, fmtDistance, fmtElapsed, fmtTime } from '..
 import { anchorOf } from '../../map';
 import { renderWarnings } from '../../panels/warnings';
 import { store } from '../store';
+import { tracking } from '../tracking';
 import { btn, card, note, statusBadge, toast, wireActions } from '../ui';
+
+/** One-tap OwnTracks setup for this phone: the button *is* the config link. */
+export function setupCard(): string {
+  const p = tracking.pending!;
+  return `<section class="card setup">
+    <h2>Set up tracking on this phone</h2>
+    <p>Your position reaches the team through the free <b>OwnTracks</b> app. Install it, then tap the button: the app opens with this station's settings already filled in.</p>
+    <a class="btn primary huge" href="${esc(p.link)}" data-action="ot-launch">Open OwnTracks</a>
+    <div class="btn-row"><a class="btn ghost small" href="https://owntracks.org/booklet/guide/apps/" target="_blank" rel="noopener">Get the app</a>${btn('Not now', 'ot-dismiss', 'ghost small')}</div>
+    <p class="muted small">Then allow location <b>Always</b> (Android: turn off battery optimisation for OwnTracks). Nothing is sent outside callouts.</p>
+  </section>`;
+}
+
+export function wireSetup(root: HTMLElement): void {
+  // The anchor must keep its default navigation (custom-scheme links need the real tap), so
+  // only record the launch here; "Not now" hides the card for this session.
+  root.querySelector('[data-action="ot-launch"]')?.addEventListener('click', () => tracking.markLaunched());
+  wireActions(root, { 'ot-dismiss': () => tracking.dismiss() });
+}
 
 export function renderStatus(root: HTMLElement): void {
   const { state, search, me } = store.s;
@@ -19,6 +39,7 @@ export function renderStatus(root: HTMLElement): void {
 
   let html = `<div class="mode-row ${inc ? 'callout' : 'standby'}"><span class="mode-tag ${inc ? 'mode-callout' : 'mode-standby'}">${inc ? 'CALLOUT' : 'STANDBY'}</span>${inc ? `<span class="elapsed-s" data-elapsed="${esc(inc.receivedAt)}">${fmtElapsed(Date.now() - Date.parse(inc.receivedAt))}</span>` : `<span class="muted">${esc(state.station.name)}</span>`}</div>`;
   html += renderWarnings(state);
+  if (tracking.needsSetup) html += setupCard();
 
   if (inc) {
     html += `<section class="card incident-card">
@@ -58,12 +79,13 @@ export function renderStatus(root: HTMLElement): void {
     }
 
     html += card(`Responding · ${responding.length}`, responding.length ? `<div class="members">${responding.map((r) => `<span class="chip-m">${esc(r.teamCallsign ?? r.callsign ?? '')} ${esc(r.name)}${r.etaMin && r.status === 'responding' ? ` <small>${r.etaMin}m</small>` : ''}</span>`).join('')}</div>` : note('Nobody has responded yet'));
-    if (!myFix) html += note('Your position is not being received. Open OwnTracks and check it is set up under More → Phones.', 'warn');
+    if (!myFix && !tracking.needsSetup) html += note(tracking.linked ? 'Your position is not being received yet. Open OwnTracks and tap Publish; check location is allowed Always. To set it up again: More → Phones.' : 'Your position is not being received. Set up OwnTracks under More → Phones.', 'warn');
   } else {
     html += card('Standby', `<p>No active callout.</p>${state.mode.lastIncident ? `<p class="muted">Last: ${esc(state.mode.lastIncident.text.slice(0, 120))}</p>` : ''}`);
   }
 
   root.innerHTML = html;
+  wireSetup(root);
   wireActions(root, {
     respond: () => respond('responding'),
     'on-scene': () => respond('on-scene'),
@@ -75,7 +97,10 @@ export function renderStatus(root: HTMLElement): void {
   async function respond(status: ResponseStatus, etaMin?: number) {
     const id = store.s.search?.incident?.id ?? inc?.id;
     if (!id) return toast('No open incident', true);
+    // First response on a phone that is not linked yet: hand the credential to OwnTracks now,
+    // from this tap, so tracking starts without a second visit to the setup card.
+    const launched = status === 'responding' && tracking.needsSetup && tracking.launch();
     await put(`/api/incidents/${id}/response`, { status, etaMin });
-    toast(status === 'responding' ? 'Marked as responding' : status === 'on-scene' ? 'On scene' : 'Updated');
+    toast(launched ? 'Responding · finishing OwnTracks setup' : status === 'responding' ? 'Marked as responding' : status === 'on-scene' ? 'On scene' : 'Updated');
   }
 }

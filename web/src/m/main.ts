@@ -13,6 +13,7 @@ import { renderStatus } from './pages/status';
 import { renderTeam } from './pages/team';
 import { currentRoute, navigate, onRoute, type Route } from './router';
 import { store } from './store';
+import { tracking } from './tracking';
 
 const app = document.getElementById('app')!;
 let ws: WsClient | undefined;
@@ -63,6 +64,9 @@ function start(): void {
     reloadAfterMs: 0, // phones: never hard-reload, just keep reconnecting
   });
   ws.start();
+  // First open on a phone: fetch an OwnTracks credential so the Status page can offer the
+  // one-tap setup (or hand it over on the first "I'm responding").
+  tracking.prepare().catch(() => {});
   store.subscribe(() => {
     renderHeader();
     if (currentPage && ['status', 'weather', 'tide', 'saf', 'team'].includes(currentPage)) render(currentRoute(), true);

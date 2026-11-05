@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import type { Fix } from '../../../shared/types.js';
 import type { Audit } from '../audit.js';
 import { requireAuth, type AuthCtx } from '../auth/middleware.js';
-import { Devices, toDevicePublic, type DeviceRow } from './devices.js';
+import { deviceNameFromUa, Devices, toDevicePublic, type DeviceRow } from './devices.js';
 import type { RawFix, Tracking } from './tracking.js';
 
 export interface OwnTracksDeps extends AuthCtx {
@@ -127,15 +127,48 @@ export async function owntracksRoutes(app: FastifyInstance, d: OwnTracksDeps): P
     return { devices: devices.listForUser(target).map(toDevicePublic) };
   });
 
-  app.post<{ Body: { name?: string } }>('/api/devices', { preHandler: requireAuth(d) }, async (req, reply) => {
+  const publicUrl = (req: FastifyRequest) => cfg.auth.publicUrl || `${req.protocol}://${req.headers.host}`;
+
+  const createDevice = (req: FastifyRequest, reply: FastifyReply, name: string | undefined) => {
+    const p = req.principal!;
+    if (p.kind !== 'user') {
+      reply.code(403).send({ error: 'forbidden' });
+      return undefined;
+    }
+    const user = users.byId(p.userId)!;
+    if (devices.listForUser(user.id).filter((x) => !x.revoked_at).length >= 5) {
+      reply.code(400).send({ error: 'device limit reached (5); revoke one first' });
+      return undefined;
+    }
+    const { device, secret } = devices.create(user, name?.trim() || deviceNameFromUa(req.headers['user-agent']));
+    const otrc = devices.config(device, secret, publicUrl(req));
+    audit.log(p, req.ip, 'device.created', { type: 'device', id: device.id }, { username: device.username });
+    return { device: toDevicePublic(device), secret, otrc, configLink: devices.configLink(otrc), expiresAt: devices.fresh(device.id)!.expiresAt };
+  };
+
+  app.post<{ Body: { name?: string } }>('/api/devices', { preHandler: requireAuth(d) }, async (req, reply) => createDevice(req, reply, req.body?.name));
+
+  /**
+   * One-tap setup from the phone itself: credentials for *this* phone, handed straight to the
+   * OwnTracks app via the config link. Live devices that never reported are revoked first so
+   * repeating the setup does not accumulate dead logins; a phone already sending fixes is kept.
+   */
+  app.post<{ Body: { name?: string } }>('/api/devices/link', { preHandler: requireAuth(d), config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req, reply) => {
     const p = req.principal!;
     if (p.kind !== 'user') return reply.code(403).send({ error: 'forbidden' });
-    const user = users.byId(p.userId)!;
-    if (devices.listForUser(user.id).filter((x) => !x.revoked_at).length >= 5) return reply.code(400).send({ error: 'device limit reached (5); revoke one first' });
-    const { device, secret } = devices.create(user, String(req.body?.name ?? 'phone'));
-    const otrc = devices.config(device, secret, cfg.auth.publicUrl || `${req.protocol}://${req.headers.host}`);
-    audit.log(p, req.ip, 'device.created', { type: 'device', id: device.id }, { username: device.username });
-    return { device: toDevicePublic(device), secret, otrc, configLink: devices.configLink(otrc) };
+    const revoked = devices.revokeUnseenForUser(p.userId);
+    if (revoked) audit.log(p, req.ip, 'device.revoked', { type: 'user', id: p.userId }, { unseen: revoked });
+    return createDevice(req, reply, req.body?.name);
+  });
+
+  /** The config link again while the secret is still held (page reloaded before the tap). */
+  app.get<{ Params: { id: string } }>('/api/devices/:id/link', { preHandler: requireAuth(d) }, async (req, reply) => {
+    const dev = devices.byId(Number(req.params.id));
+    if (!own(req, reply, dev)) return;
+    const f = devices.fresh(dev.id);
+    if (!f || dev.revoked_at) return reply.code(410).send({ error: 'secret no longer available; link the phone again' });
+    reply.header('cache-control', 'no-store');
+    return { device: toDevicePublic(dev), configLink: devices.configLink(devices.config(dev, f.secret, publicUrl(req))), expiresAt: f.expiresAt };
   });
 
   app.get<{ Params: { id: string } }>('/api/devices/:id/qr.svg', { preHandler: requireAuth(d) }, async (req, reply) => {
@@ -143,7 +176,7 @@ export async function owntracksRoutes(app: FastifyInstance, d: OwnTracksDeps): P
     if (!own(req, reply, dev)) return;
     const secret = devices.freshSecret(dev.id);
     if (!secret) return reply.code(410).send({ error: 'secret no longer available; create a new device' });
-    const link = devices.configLink(devices.config(dev, secret, cfg.auth.publicUrl || `${req.protocol}://${req.headers.host}`));
+    const link = devices.configLink(devices.config(dev, secret, publicUrl(req)));
     const svg = await QRCode.toString(link, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, width: 320 });
     reply.header('cache-control', 'no-store').type('image/svg+xml');
     return svg;
@@ -155,7 +188,7 @@ export async function owntracksRoutes(app: FastifyInstance, d: OwnTracksDeps): P
     const secret = devices.freshSecret(dev.id);
     if (!secret) return reply.code(410).send({ error: 'secret no longer available; create a new device' });
     reply.header('cache-control', 'no-store').header('content-disposition', `attachment; filename="howth-cg-${dev.username}.otrc"`).type('application/json');
-    return devices.config(dev, secret, cfg.auth.publicUrl || `${req.protocol}://${req.headers.host}`);
+    return devices.config(dev, secret, publicUrl(req));
   });
 
   app.delete<{ Params: { id: string } }>('/api/devices/:id', { preHandler: requireAuth(d) }, async (req, reply) => {
