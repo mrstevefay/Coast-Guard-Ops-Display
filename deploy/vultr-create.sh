@@ -110,6 +110,9 @@ for _ in $(seq 1 60); do
 done
 echo
 
+# Vultr defaults to weekly backups; the runbook wants daily.
+api POST "/instances/$ID/backup-schedule" '{"type":"daily","hour":3}' >/dev/null && echo "backup schedule: daily 03:00 UTC"
+
 IP=$(jq -r .main_ip <<<"$INST")
 IP6=$(jq -r .v6_main_ip <<<"$INST")
 cat <<EOF
