@@ -20,7 +20,7 @@ Environment=XDG_SESSION_TYPE=wayland
 Environment=WLR_LIBINPUT_NO_DEVICES=1
 # Wait for the dashboard, then run Chromium full-screen inside the cage compositor.
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && exit 0; sleep 2; done; exit 0'
-ExecStart=/usr/bin/cage -d -- /opt/howth-cg/bin/kiosk-browser.sh
+ExecStart=/usr/bin/cage -d -s -- /opt/howth-cg/bin/kiosk-browser.sh
 Restart=always
 RestartSec=5
 
