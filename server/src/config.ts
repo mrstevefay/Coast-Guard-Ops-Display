@@ -17,6 +17,7 @@ export interface AppConfig {
   providers: {
     metForecast: ProviderBase & { url: string; fallbackUrl?: string; hoursAhead: number };
     metObservations: ProviderBase & { url: string; stationName: string };
+    metSeaArea: ProviderBase & { url: string; headland: string };
     metWarnings: ProviderBase & { rssUrl: string; localRegionCodes: string[]; localMarineCodes: string[]; marineHeadland?: string };
     tideGauge: ProviderBase & { erddap: string; dataset: string; stationId: string };
     tidePrediction: ProviderBase & {

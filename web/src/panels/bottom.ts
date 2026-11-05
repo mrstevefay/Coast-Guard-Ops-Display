@@ -40,7 +40,7 @@ export function renderWebcam(s: DashboardState): string {
 }
 
 export function renderHealth(s: DashboardState): string {
-  const list = Object.values(s.providers);
+  const list = Object.values(s.providers).filter((p) => p.status !== 'disabled');
   const dots = list
     .map((p: ProviderHealth) => `<div class="dot-row"><span class="dot dot-${esc(p.status)}"></span><span class="dot-name">${esc(short(p.name))}</span><span class="dot-time muted">${p.lastSuccess ? fmtTime(p.lastSuccess) : ''}</span></div>`)
     .join('');
@@ -51,6 +51,7 @@ const SHORT: Record<string, string> = {
   metForecast: 'Met forecast',
   metObservations: 'Met obs',
   metWarnings: 'Warnings',
+  metSeaArea: 'Sea area fc',
   tidePrediction: 'Tide pred',
   tideGauge: 'Tide gauge',
   waveModel: 'Wave model',

@@ -6,6 +6,7 @@ import { renderAis, renderHealth, renderMuster, renderWebcam } from './panels/bo
 import { renderDaylight } from './panels/daylight';
 import { renderIncident } from './panels/incident';
 import { renderSea } from './panels/sea';
+import { renderSeaArea } from './panels/seaArea';
 import { renderTide } from './panels/tide';
 import { renderTopbar } from './panels/topbar';
 import { renderWarnings } from './panels/warnings';
@@ -59,7 +60,7 @@ function render(s: DashboardState): void {
     set('slot-wind', s.panels.wind ? renderWind(s, true) : '');
     set('slot-tide', s.panels.tide ? renderTide(s, true) : '');
     set('slot-sun', s.panels.sun ? renderDaylight(s, true) : '');
-    set('slot-muster', s.panels.muster ? renderMuster(s, true) : '');
+    set('slot-muster', s.panels.muster ? renderMuster(s, true) : s.panels.seaArea ? renderSeaArea(s, true) : '');
   } else {
     set('slot-warnings', s.panels.warnings ? renderWarnings(s) : '');
     set('slot-wind', s.panels.wind ? renderWind(s) : '');
@@ -67,7 +68,7 @@ function render(s: DashboardState): void {
     set('slot-tide', s.panels.tide ? renderTide(s) : '');
     set('slot-sea', s.panels.sea ? renderSea(s) : '');
     set('slot-sun', s.panels.sun ? renderDaylight(s) : '');
-    set('slot-muster', s.panels.muster ? renderMuster(s) : '');
+    set('slot-muster', s.panels.muster ? renderMuster(s) : s.panels.seaArea ? renderSeaArea(s) : '');
     set('slot-ais', s.panels.ais ? renderAis(s) : '');
     set('slot-webcam', s.panels.webcam ? renderWebcam(s) : '');
     set('slot-health', renderHealth(s));

@@ -183,6 +183,35 @@ export interface SeaState {
   offshore?: SeaStateReading;
 }
 
+// -------------------------------------------------------- sea area forecast
+
+export interface SeaAreaSection {
+  /** e.g. "Forecast for all Irish coastal waters and for the Irish Sea" or "... from Carlingford Lough to Howth Head to Wicklow Head" */
+  title: string;
+  wind: string;
+  weather: string;
+  visibility: string;
+  seaState?: string;
+  forceMin?: number;
+  forceMax?: number;
+  /** Compass summary of the leading direction words, e.g. "NE–E". */
+  direction?: string;
+  visibilityBand: VisibilityBand;
+}
+
+export interface SeaAreaForecast {
+  issuedAt: string;
+  validFrom?: string;
+  validTo?: string;
+  smallCraft?: string;
+  galeWarning?: string;
+  situation?: string;
+  /** The section covering the station's stretch of coast. */
+  area: SeaAreaSection;
+  sections: SeaAreaSection[];
+  outlook?: string;
+}
+
 // -------------------------------------------------------------------- sun
 
 export interface SunMoonState {
@@ -288,6 +317,8 @@ export interface PanelToggles {
   ais: boolean;
   webcam: boolean;
   muster: boolean;
+  /** Met Éireann Sea Area Forecast panel (takes the muster slot when muster is off). */
+  seaArea: boolean;
   map: boolean;
   warnings: boolean;
 }
@@ -313,6 +344,7 @@ export interface DashboardData {
   warnings?: WarningsState;
   tide?: TideState;
   sea?: SeaState;
+  seaArea?: SeaAreaForecast;
   sun?: SunMoonState;
   ais?: AisState;
   webcam?: WebcamState;

@@ -3,6 +3,7 @@ import { aisProvider } from './ais.js';
 import { dublinBayBuoyProvider } from './dublinBayBuoy.js';
 import { metForecastProvider } from './metForecast.js';
 import { metObservationsProvider } from './metObservations.js';
+import { metSeaAreaProvider } from './metSeaArea.js';
 import { metWarningsProvider } from './metWarnings.js';
 import { musterProvider } from './muster.js';
 import { sunMoonProvider } from './sunMoon.js';
@@ -20,6 +21,7 @@ export function buildProviders(cfg: AppConfig): Provider[] {
     metForecastProvider(cfg),
     metObservationsProvider(cfg),
     metWarningsProvider(cfg),
+    metSeaAreaProvider(cfg),
     tidePredictionProvider(cfg),
     tideGaugeProvider(cfg),
     waveModelProvider(cfg),

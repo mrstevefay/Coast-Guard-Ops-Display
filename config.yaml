@@ -28,7 +28,9 @@ panels:
   sun: true
   ais: true
   webcam: true
-  muster: true
+  # Crew muster is Phase 2/3; off until an integration feeds it.
+  muster: false
+  seaArea: true
   map: true
   warnings: true
 
@@ -60,6 +62,14 @@ providers:
     pollIntervalMs: 600000        # 10 min
     url: "https://prodapi.metweb.ie/observations/dublin/today"
     stationName: "Dublin Airport"
+
+  metSeaArea:
+    enabled: true
+    pollIntervalMs: 1800000       # 30 min; issued ~every 6 h
+    # No API: the met.ie page is parsed (stable class names, fixture-tested).
+    url: "https://www.met.ie/forecasts/marine-inland-lakes/sea-area-forecast"
+    # Which coastal stretch is "ours" when the forecast is split by area.
+    headland: "Howth Head"
 
   metWarnings:
     enabled: true
@@ -143,7 +153,7 @@ providers:
     refreshSec: 60
 
   muster:
-    enabled: true
+    enabled: false                # Phase 2/3 stub
     pollIntervalMs: 30000
     minimumCrew: 4
     requiredRoles: ["Officer in Charge", "Boat Cox", "Crew", "Crew", "Driver"]
