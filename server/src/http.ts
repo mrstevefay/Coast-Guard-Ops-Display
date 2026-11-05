@@ -17,6 +17,9 @@ import type { CalloutManager, CalloutRequest } from './callout.js';
 import type { AppConfig } from './config.js';
 import type { Db } from './db/index.js';
 import type { Scheduler } from './scheduler.js';
+import type { Devices } from './search/devices.js';
+import { owntracksRoutes } from './search/owntracks.js';
+import type { Tracking } from './search/tracking.js';
 import type { StateStore } from './state.js';
 import { Hub } from './ws.js';
 
@@ -32,6 +35,8 @@ export interface ServerDeps {
   users: Users;
   sessions: Sessions;
   audit: Audit;
+  devices: Devices;
+  tracking: Tracking;
 }
 
 export interface BuiltServer {
@@ -120,16 +125,28 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     return { status, mode: store.getMode().mode, uptimeSec: Math.round(process.uptime()), db: deps.db.version > 0 ? 'ok' : 'missing', wsClients: hub.size, ...detail };
   });
 
-  // ---- accounts (only when auth is on; in open mode nobody has an identity) ----
-  if (!cfg.auth.open) {
-    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit }));
-  } else {
-    app.get('/api/auth/me', async () => ({ principal: { kind: 'open' } }));
-  }
-
   // ---- WebSocket hub ----
   const hub = new Hub(store, auth);
   hub.register(app);
+
+  // ---- accounts + tracking (only when auth is on; in open mode nobody has an identity) ----
+  if (!cfg.auth.open) {
+    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit }));
+    if (cfg.search.enabled) {
+      await app.register(async (sub) =>
+        owntracksRoutes(sub, {
+          ...auth,
+          audit: deps.audit,
+          devices: deps.devices,
+          tracking: deps.tracking,
+          incidentOpen: () => store.getMode().mode === 'callout',
+          onFix: (fix) => hub.queueFix(fix),
+        }),
+      );
+    }
+  } else {
+    app.get('/api/auth/me', async () => ({ principal: { kind: 'open' } }));
+  }
 
   // ---- static frontend ----
   const dist = findWebDist();

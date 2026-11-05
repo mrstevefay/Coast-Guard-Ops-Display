@@ -9,6 +9,8 @@ import { loadConfig, type AppConfig } from '../../src/config.js';
 import { openDb } from '../../src/db/index.js';
 import { buildServer } from '../../src/http.js';
 import { Scheduler } from '../../src/scheduler.js';
+import { Devices } from '../../src/search/devices.js';
+import { Tracking } from '../../src/search/tracking.js';
 import { StateStore } from '../../src/state.js';
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -32,7 +34,14 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
   const store = new StateStore(cfg);
   const callout = new CalloutManager(cfg, store, quiet);
   const scheduler = new Scheduler(store, { config: cfg, log: quiet, current: () => store.getData() });
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit });
+  const devices = new Devices(db);
+  const tracking = new Tracking(db, cfg.search.maxAccuracyM, {
+    current: () => {
+      const m = store.getMode();
+      return m.mode === 'callout' && m.incident ? { incidentId: m.incident.id } : undefined;
+    },
+  });
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking });
   await app.ready();
 
   const seed = {
@@ -55,5 +64,5 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
     fs.rmSync(cfg.server.dataDir, { recursive: true, force: true });
   };
 
-  return { app, hub, cfg, db, users, sessions, audit, store, callout, seed, login, close };
+  return { app, hub, cfg, db, users, sessions, audit, store, callout, devices, tracking, seed, login, close };
 }

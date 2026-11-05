@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
-import type { Principal, WsMessage } from '../../shared/types.js';
+import type { Fix, Principal, WsMessage } from '../../shared/types.js';
 import type { AuthCtx } from './auth/middleware.js';
 import { resolvePrincipal } from './auth/middleware.js';
 import type { StateStore } from './state.js';
@@ -70,9 +70,27 @@ export class Hub {
     if (c.socket.readyState === c.socket.OPEN) c.socket.send(JSON.stringify(msg));
   }
 
-  /** Only authenticated users/displays (never anonymous in open mode? open mode = everyone). */
+  /** Only authenticated users/displays. In open mode everyone is "authenticated" (LAN). */
   sendAuthenticated(msg: WsMessage): void {
     this.send(msg, (p) => p.kind !== 'open' || this.auth.cfg.auth.open);
+  }
+
+  // ---- position deltas, batched ~1 s ----
+  private fixQueue: Fix[] = [];
+  private fixTimer?: NodeJS.Timeout;
+  queueFix(fix: Fix): void {
+    this.fixQueue.push(fix);
+    if (this.fixTimer) return;
+    this.fixTimer = setTimeout(() => {
+      this.fixTimer = undefined;
+      const fixes = this.fixQueue;
+      this.fixQueue = [];
+      // keep only the newest per user in a batch
+      const byUser = new Map<number, Fix>();
+      for (const f of fixes) if (!byUser.has(f.userId) || byUser.get(f.userId)!.tst <= f.tst) byUser.set(f.userId, f);
+      this.sendAuthenticated({ type: 'pos', fixes: [...byUser.values()] });
+    }, 1000);
+    this.fixTimer.unref?.();
   }
 
   get size(): number {
@@ -83,6 +101,7 @@ export class Hub {
     this.store.off('change', this.scheduleState);
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.statePending) clearTimeout(this.statePending);
+    if (this.fixTimer) clearTimeout(this.fixTimer);
     for (const c of this.clients) c.socket.close(1001, 'server closing');
     this.clients.clear();
   }

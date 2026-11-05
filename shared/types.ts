@@ -320,6 +320,29 @@ export interface DevicePublic {
   revokedAt?: string;
 }
 
+// ------------------------------------------------------------- tracking (Phase 2)
+
+/** One position fix from a crew phone (OwnTracks). Speeds in knots, altitude metres (GPS). */
+export interface Fix {
+  userId: number;
+  deviceId: number;
+  name: string;
+  callsign?: string;
+  teamId?: number;
+  incidentId?: string;
+  lat: number;
+  lon: number;
+  alt?: number;
+  acc?: number;
+  sogKt?: number;
+  cogDeg?: number;
+  batt?: number;
+  /** Fix time (unix seconds, from the phone). */
+  tst: number;
+  /** When the server received it (ISO). */
+  at: string;
+}
+
 // ----------------------------------------------------------------- health
 
 export type ProviderStatus = 'ok' | 'stale' | 'error' | 'disabled' | 'stub' | 'starting';
@@ -397,4 +420,6 @@ export interface DashboardState extends DashboardData {
 export type WsMessage =
   | { type: 'state'; state: DashboardState }
   | { type: 'ping'; t: number }
-  | { type: 'auth'; ok: boolean; principal?: Principal };
+  | { type: 'auth'; ok: boolean; principal?: Principal }
+  /** Position deltas, batched ~1 s. Authenticated sockets only. */
+  | { type: 'pos'; fixes: Fix[] };

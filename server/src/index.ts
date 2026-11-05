@@ -9,6 +9,8 @@ import { buildServer } from './http.js';
 import { buildProviders } from './providers/index.js';
 import type { ProviderContext } from './providers/types.js';
 import { Scheduler } from './scheduler.js';
+import { Devices } from './search/devices.js';
+import { Tracking } from './search/tracking.js';
 import { StateStore } from './state.js';
 
 async function main() {
@@ -33,7 +35,18 @@ async function main() {
   const scheduler = new Scheduler(store, ctx);
   for (const p of buildProviders(cfg)) scheduler.add(p);
 
-  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit });
+  // Tracking: until the search service (M3) takes over, fixes are kept as track
+  // points whenever the display is in callout mode.
+  const devices = new Devices(db);
+  const tracking = new Tracking(db, cfg.search.maxAccuracyM, {
+    current: () => {
+      const m = store.getMode();
+      return m.mode === 'callout' && m.incident ? { incidentId: m.incident.id } : undefined;
+    },
+  });
+  tracking.warm(devices.listAll().filter((d) => !d.revoked_at).map((d) => ({ device: d, user: users.byId(d.user_id)! })).filter((x) => x.user));
+
+  const { app } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking });
   const purge = setInterval(() => sessions.purgeExpired(), 3600_000);
   purge.unref?.();
   // Route provider logs through fastify's pino logger now that it exists.
