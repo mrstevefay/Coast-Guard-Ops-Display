@@ -126,6 +126,7 @@ Auth is `Authorization: Bearer <CALLOUT_TOKEN>` (or `X-Api-Token`), or a signed-
 session. With no token configured and accounts off, the mutating endpoints return 503.
 
 **Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
+`GET /api/incidents` (history), `GET /api/incidents/:id/replay`, `GET /api/incidents/:id/report[.html]` (manager);
 `GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…` (admin); `GET|POST|DELETE /api/admin/display-keys`,
 `GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
 `GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);

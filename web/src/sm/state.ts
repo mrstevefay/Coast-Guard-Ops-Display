@@ -15,8 +15,9 @@ export interface ConsoleState {
   /** Next map click sets the planning point. */
   pickingIpp: boolean;
   editingTargetId?: number;
-  /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>). */
-  view: 'ops' | 'settings';
+  /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>); 'history' = past incidents (#history/<id>). */
+  view: 'ops' | 'settings' | 'history';
+  historyId?: string;
   section: 'users' | 'displays' | 'feeds' | 'backups' | 'audit' | 'system' | 'account';
 }
 

@@ -8,6 +8,7 @@ import { renderLogin } from '../m/pages/login';
 import { toast } from '../m/ui';
 import { WsClient } from '../ws';
 import { TargetDrawing, type DrawKind } from './draw';
+import { historyMapResize, leaveHistory, renderHistory } from './history';
 import { closeModal, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
 import { renderSidebar } from './sidebar';
@@ -54,6 +55,7 @@ function start(): void {
       <div class="sm-brand">Howth CG · Search Manager</div>
       <div id="sm-incident" class="sm-incident"></div>
       <div class="sm-actions" id="sm-actions"></div>
+      <a class="btn-sm sm-view" id="sm-history-btn" href="#history" title="Past taskings and callouts: replay and reports">History</a>
       <button class="btn-sm sm-view" id="sm-view" title="Settings & administration">⚙ Settings</button>
     </header>
     <aside class="sm-side" id="sm-side"></aside>
@@ -62,13 +64,14 @@ function start(): void {
       <div class="draw-hint" id="draw-hint"></div>
     </main>
     <section class="sm-settings" id="sm-settings"></section>
+    <section class="sm-history" id="sm-history"></section>
     <footer class="sm-status" id="sm-status"></footer>
     <div id="modal"></div>`;
   mapEl = document.createElement('div');
   mapEl.className = 'sm-map-el';
   document.getElementById('sm-map-wrap')!.prepend(mapEl);
   document.getElementById('sm-view')!.addEventListener('click', () => {
-    location.hash = cs.s.view === 'settings' ? '#map' : `#settings/${cs.s.section}`;
+    location.hash = cs.s.view === 'ops' ? `#settings/${cs.s.section}` : '#map';
   });
   window.addEventListener('hashchange', () => { readHash(); applyView(); });
   // A temporary password must be replaced before anything else.
@@ -92,6 +95,12 @@ function start(): void {
 // ---------------------------------------------------------------- views
 /** #settings/<section> opens the administration pages; anything else is the map. */
 function readHash(): void {
+  const h = /^#history(?:\/([A-Za-z0-9-]+))?/.exec(location.hash);
+  if (h) {
+    cs.s.view = 'history';
+    cs.s.historyId = h[1] || undefined;
+    return;
+  }
   const m = /^#settings(?:\/([a-z]+))?/.exec(location.hash);
   cs.s.view = m ? 'settings' : 'ops';
   if (m && isSettingsSection(m[1])) cs.s.section = m[1];
@@ -99,11 +108,20 @@ function readHash(): void {
 
 function applyView(): void {
   const settings = cs.s.view === 'settings';
+  const history = cs.s.view === 'history';
   const wasSettings = app.classList.contains('settings');
   app.classList.toggle('settings', settings);
+  app.classList.toggle('history', history);
   const b = document.getElementById('sm-view');
-  if (b) b.textContent = settings ? '◀ Map' : '⚙ Settings';
-  if (settings) {
+  if (b) b.textContent = settings || history ? '◀ Map' : '⚙ Settings';
+  document.getElementById('sm-history-btn')?.classList.toggle('on', history);
+  if (!history) leaveHistory();
+  if (history) {
+    closeModal();
+    drawing?.stopEditing();
+    renderHistory(document.getElementById('sm-history')!, cs.s.historyId);
+    historyMapResize();
+  } else if (settings) {
     closeModal();
     drawing?.stopEditing();
     // Coming from the map: reload the section so the data is fresh.

@@ -1,12 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Fix, IncidentKind, ModeState, MusterState, PlanningPoint, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
+import type { Fix, IncidentKind, IncidentReplay, IncidentSummary, ModeState, MusterState, PlanningPoint, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import type { AppConfig } from '../config.js';
 import { now, type Db } from '../db/index.js';
 import type { StateStore } from '../state.js';
 import { validateGeometry } from './geometry.js';
+import { listSummaries, replayParts, snapshotConditions } from './history.js';
+import { buildReport, renderReportHtml, type IncidentReport } from './report.js';
 import { Subjects } from './subject.js';
 import type { TrackContext, Tracking } from './tracking.js';
 
@@ -49,6 +51,7 @@ export class SearchService extends EventEmitter implements TrackContext {
         // close anything still open (a callout supersedes a tasking), then open this one
         this.closeOpen('superseded');
         this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at) VALUES (?, 'callout', ?, ?, ?, ?, ?, ?)", m.incident.id, m.incident.text, m.incident.receivedAt, m.incident.lat ?? null, m.incident.lon ?? null, m.incident.source, now());
+        this.recordConditions(m.incident.id, 'start');
       }
     } else if (m.mode === 'standby' && prev?.mode === 'callout') {
       // Stand-down closes the callout only; a tasking opened meanwhile is unaffected.
@@ -74,7 +77,16 @@ export class SearchService extends EventEmitter implements TrackContext {
       if (!open || (onlyId && open.id !== onlyId)) return;
       this.db.run('UPDATE incidents SET ended_at = ?, end_reason = ? WHERE id = ?', t, reason, open.id);
       this.db.run("UPDATE teams SET status = 'stood-down', updated_at = ? WHERE incident_id = ? AND status <> 'stood-down'", t, open.id);
+      this.recordConditions(open.id, 'end');
     });
+  }
+
+  private recordConditions(incidentId: string, phase: 'start' | 'end'): void {
+    try {
+      snapshotConditions(this.db, incidentId, phase, this.store.getData());
+    } catch {
+      /* conditions are best-effort; never block an incident on them */
+    }
   }
 
   /**
@@ -89,6 +101,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     const id = randomUUID();
     const t = now();
     this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at, created_by) VALUES (?, 'tasking', ?, ?, ?, ?, 'app', ?, ?)", id, text.slice(0, 2000), t, finite(input.lat), finite(input.lon), t, input.createdBy ?? null);
+    this.recordConditions(id, 'start');
     this.changed();
     return toIncident(this.incidentById(id)!, this.subjects);
   }
@@ -142,8 +155,40 @@ export class SearchService extends EventEmitter implements TrackContext {
        ON CONFLICT(incident_id, user_id) DO UPDATE SET status = excluded.status, eta_min = excluded.eta_min, note = excluded.note, updated_at = excluded.updated_at`,
       incidentId, userId, status, etaMin ?? null, note?.slice(0, 200) ?? null, t, t,
     );
+    // Full status history for response-time reporting (the responses row only keeps the latest).
+    this.db.run('INSERT INTO response_events (incident_id, user_id, status, eta_min, at) VALUES (?, ?, ?, ?, ?)', incidentId, userId, status, etaMin ?? null, t);
     this.changed();
     return this.responders(incidentId).find((r) => r.userId === userId)!;
+  }
+
+  // ------------------------------------------------------------ history / replay / report
+  history(limit = 100): IncidentSummary[] {
+    return listSummaries(this.db, limit);
+  }
+
+  replay(incidentId: string): IncidentReplay | undefined {
+    const row = this.incidentById(incidentId);
+    if (!row) return undefined;
+    const responders = this.responders(incidentId);
+    const parts = replayParts(this.db, incidentId, this.users, responders.map((r) => r.userId));
+    const teams = this.teams(incidentId).map((t) => ({ ...t, memberships: parts.memberships.get(t.id) ?? [] }));
+    return { incident: toIncident(row, this.subjects), teams, targets: this.targets(incidentId), responders, users: parts.users, fixes: parts.fixes, events: parts.events, conditions: parts.conditions };
+  }
+
+  report(incidentId: string): { report: IncidentReport; replay: IncidentReplay } | undefined {
+    const replay = this.replay(incidentId);
+    if (!replay) return undefined;
+    const responseEvents = this.db
+      .all<{ user_id: number; status: string; eta_min: number | null; at: string }>('SELECT user_id, status, eta_min, at FROM response_events WHERE incident_id = ? ORDER BY at', incidentId)
+      .map((e) => ({ userId: e.user_id, status: e.status, etaMin: e.eta_min ?? undefined, at: e.at }));
+    const subj = this.subjects.get(incidentId);
+    const report = buildReport(replay, { station: this.cfg.station.name, cfg: this.cfg, responseEvents, subject: subj ? { name: subj.name, sex: subj.sex, age: subj.age } : undefined });
+    return { report, replay };
+  }
+
+  reportHtml(incidentId: string): string | undefined {
+    const r = this.report(incidentId);
+    return r ? renderReportHtml(r.report, r.replay, this.cfg.station) : undefined;
   }
 
   responders(incidentId: string): ResponderRow[] {
@@ -451,6 +496,7 @@ function toIncident(r: IncidentRow, subjects: Subjects): SearchIncident {
     source: r.source ?? undefined,
     startedAt: r.started_at,
     endedAt: r.ended_at ?? undefined,
+    endReason: r.end_reason ?? undefined,
     ipp,
     subjectUpdatedAt: subjects.updatedAt(r.id),
   };

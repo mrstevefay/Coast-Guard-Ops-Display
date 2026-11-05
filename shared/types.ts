@@ -371,6 +371,7 @@ export interface SearchIncident {
   source?: string;
   startedAt: string;
   endedAt?: string;
+  endReason?: string;
   ipp?: PlanningPoint;
   /** Bumps when the subject record changes, so phones refetch it. Details are never in the snapshot. */
   subjectUpdatedAt?: string;
@@ -449,6 +450,55 @@ export interface Target {
   priority: number;
   createdAt: string;
   completedAt?: string;
+}
+
+// ----------------------------------------------------------- history / replay / report
+
+/** One row in the console's History list. */
+export interface IncidentSummary {
+  id: string;
+  kind: IncidentKind;
+  text: string;
+  startedAt: string;
+  endedAt?: string;
+  endReason?: string;
+  responders: number;
+  teams: number;
+  targets: number;
+  fixes: number;
+}
+
+/** Weather, sea and tide as they were when an incident opened / closed. */
+export interface ConditionsSnapshot {
+  phase: 'start' | 'end';
+  at: string;
+  wind?: { speedKt: number; gustKt?: number; dirName: string; beaufort: number };
+  observed?: { stationName: string; time: string; speedKt: number; gustKt?: number; dirName: string; tempC?: number; pressureHpa?: number };
+  visibility?: string;
+  precipMm?: number;
+  tempC?: number;
+  pressureHpa?: number;
+  symbol?: string;
+  sea?: { source: string; hsM?: number; periodS?: number; seaTempC?: number; gale?: boolean };
+  tide?: { heightM?: number; rising?: boolean; next?: { kind: string; time: string; heightM: number }; springNeap?: string };
+  sun?: { sunrise: string; sunset: string; civilDusk: string; isDaylight: boolean; daylightRemainingMin: number };
+  warnings: string[];
+}
+
+export interface ReplayFix { u: number; t: number; lat: number; lon: number; team: number | null }
+export interface ReplayEvent { at: string; kind: string; text: string }
+export interface TeamMembership { userId: number; name: string; callsign: string; joinedAt: string; leftAt?: string }
+
+/** Everything the console needs to replay a past (or current) incident. */
+export interface IncidentReplay {
+  incident: SearchIncident;
+  teams: (Team & { memberships: TeamMembership[] })[];
+  targets: Target[];
+  responders: ResponderRow[];
+  users: Record<number, { name: string; callsign?: string }>;
+  fixes: ReplayFix[];
+  events: ReplayEvent[];
+  conditions: ConditionsSnapshot[];
 }
 
 /** Everything the console / phones / TV need about the current search. */
