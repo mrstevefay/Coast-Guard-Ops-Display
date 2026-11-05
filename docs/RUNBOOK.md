@@ -2,6 +2,11 @@
 
 ## First-time VPS setup (Ubuntu 24.04, 1 vCPU / 2 GB)
 
+Scripted: `VULTR_API_KEY=... deploy/vultr-create.sh` does steps 1 (firewall) and 2 (box
+setup via `deploy/cloud-init.yaml`): London, `vc2-1c-2gb`, daily backups, SSH key, firewall
+22 (your IP) / 80 / 443, `deploy` user with Docker, fail2ban, unattended-upgrades. It prints
+the IP for DNS; continue from step 3. Manual equivalent:
+
 1. DNS: `A ops.<your-domain> → <VPS IP>`. Vultr firewall: allow 22 (your IP), 80, 443 only.
 2. On the box:
    ```bash
