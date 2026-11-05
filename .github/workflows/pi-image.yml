@@ -6,7 +6,7 @@ on:
   push:
     tags: ['v*']
     branches: ['**']
-    paths: ['image/**', '.github/workflows/pi-image.yml']
+    paths: ['image/**', 'server/**', 'web/**', 'shared/**', 'config.yaml', 'package*.json', '.github/workflows/pi-image.yml']
 
 jobs:
   build-image:
