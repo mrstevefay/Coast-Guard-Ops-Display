@@ -19,6 +19,13 @@ body.m * { box-sizing: border-box; }
 .tabs a { text-align: center; padding: 12px 0 10px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; }
 .tabs a.active { color: var(--accent); border-top: 2px solid var(--accent); margin-top: -1px; }
 body.callout .tabs a[data-tab='status'] { color: var(--red); }
+/* Opened on a laptop/desktop: keep a phone-width column so cards and the tide curve are not
+   stretched across the window. */
+@media (min-width: 700px) {
+  #page { width: 100%; max-width: 640px; margin: 0 auto; }
+  .m-head { padding-left: max(16px, calc((100vw - 640px) / 2 + 16px)); padding-right: max(16px, calc((100vw - 640px) / 2 + 16px)); }
+  .tabs { grid-template-columns: repeat(6, minmax(0, 106px)); justify-content: center; }
+}
 
 /* ---- cards & text ---- */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }

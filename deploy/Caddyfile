@@ -3,7 +3,8 @@
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
-		Referrer-Policy same-origin
+		# OSM tiles need a Referer (tile usage policy) — same-origin would strip it and tiles come back "Access blocked".
+		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
 	# WebSocket upgrades on /api/ws pass through reverse_proxy by default.
