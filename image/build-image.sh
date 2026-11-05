@@ -126,7 +126,12 @@ echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ) node=$NODE_VERSION" > "$APP/BUILD"
 log "enabling services"
 chr systemctl enable howth-cg-dashboard.service howth-cg-kiosk.service
 chr systemctl set-default graphical.target
-chr systemctl disable getty@tty1.service || true
+# The kiosk owns tty1. Masking (not just disabling) stops logind/getty.target
+# from spawning a login prompt there, which would Conflict= the kiosk away.
+chr systemctl mask getty@tty1.service
+# Wi-Fi: regulatory domain so the radio isn't rfkill-blocked on first boot.
+echo "REGDOMAIN=IE" > "$ROOT/etc/default/crda" 2>/dev/null || true
+chr sh -c 'command -v raspi-config >/dev/null && raspi-config nonint do_wifi_country IE' || true
 # No need for the first-boot wizard on Lite; keep resize + userconf behaviour.
 
 # ---------------------------------------------------------------- boot partition
