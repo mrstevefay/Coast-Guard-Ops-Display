@@ -1,3 +1,4 @@
+import { profileBySlug } from '../../../../shared/lpb/index';
 import type { IncidentSubject, ResponseStatus, SearchIncident } from '../../../../shared/types';
 import { get, put } from '../../api';
 import { bearingDeg, distanceM, esc, fmtDistance, fmtElapsed, fmtTime } from '../../format';
@@ -45,7 +46,7 @@ function subjectCard(inc: SearchIncident, me?: { lat: number; lon: number }): st
   if (s === undefined) return card('Subject', note('Loading details…'));
   if (!s) return '';
   const photo = s.hasPhoto ? `<img src="/api/incidents/${inc.id}/subject/photo?t=${encodeURIComponent(s.photoUpdatedAt ?? '')}" alt="Subject" />` : '';
-  const flags = [s.despondent ? 'Despondent' : '', s.mentalHealth ? 'Mental health' : '', s.selfHarmHistory ? `Previous self-harm${s.selfHarmMeans ? `: ${s.selfHarmMeans}` : ''}` : ''].filter(Boolean);
+  const flags = [profileBySlug(s.category)?.name ?? '', s.despondent ? 'Despondent' : '', s.mentalHealth ? 'Mental health' : '', s.selfHarmHistory ? `Previous self-harm${s.selfHarmMeans ? `: ${s.selfHarmMeans}` : ''}` : ''].filter(Boolean);
   const kv = (label: string, v?: string) => (v ? `<div><span>${label}</span>${esc(v)}</div>` : '');
   void me;
   return `<section class="card subject-card"><h2>Subject</h2>

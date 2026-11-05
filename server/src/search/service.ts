@@ -182,7 +182,7 @@ export class SearchService extends EventEmitter implements TrackContext {
       .all<{ user_id: number; status: string; eta_min: number | null; at: string }>('SELECT user_id, status, eta_min, at FROM response_events WHERE incident_id = ? ORDER BY at', incidentId)
       .map((e) => ({ userId: e.user_id, status: e.status, etaMin: e.eta_min ?? undefined, at: e.at }));
     const subj = this.subjects.get(incidentId);
-    const report = buildReport(replay, { station: this.cfg.station.name, cfg: this.cfg, responseEvents, subject: subj ? { name: subj.name, sex: subj.sex, age: subj.age } : undefined });
+    const report = buildReport(replay, { station: this.cfg.station.name, cfg: this.cfg, responseEvents, subject: subj ? { name: subj.name, sex: subj.sex, age: subj.age, category: subj.category, terrain: subj.terrain } : undefined });
     return { report, replay };
   }
 

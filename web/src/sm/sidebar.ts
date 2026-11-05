@@ -1,3 +1,4 @@
+import { LPB, LPB_GROUPS, LPB_TERRAINS, locationShares, outcomeShares, profileBySlug, ringRadiiKm, suggestProfile, terrainsWithData, type LpbProfile } from '../../../shared/lpb/index';
 import type { IncidentSubject, ResponderRow, Target, TargetStatus, Team, TeamStatus } from '../../../shared/types';
 import { del, get, patch, post, put } from '../api';
 import { esc, fmtAgeShort, fmtTime } from '../format';
@@ -14,6 +15,8 @@ export interface SidebarActions {
   drawMode: () => string;
   /** Arm the map so the next click sets the planning point. */
   pickIpp: () => void;
+  /** Zoom the map to the lost-person-behaviour rings. */
+  fitRings: () => void;
 }
 
 const TEAM_STATUSES: TeamStatus[] = ['forming', 'tasked', 'searching', 'returned', 'stood-down'];
@@ -22,7 +25,7 @@ const badge = (s: string) => `<span class="badge-s ${({ responding: 'amber', 'on
 
 export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   const { search } = cs.s;
-  const tabs = (['responders', 'teams', 'targets', 'subject'] as const)
+  const tabs = (['responders', 'teams', 'targets', 'subject', 'behaviour'] as const)
     .map((t) => {
       const n = t === 'responders' ? ` (${search?.responders.filter((r) => r.status === 'responding' || r.status === 'on-scene').length ?? 0})` : t === 'teams' ? ` (${search?.teams.length ?? 0})` : t === 'targets' ? ` (${search?.targets.filter((x) => x.status !== 'cancelled').length ?? 0})` : '';
       return `<button class="tab ${cs.s.tab === t ? 'active' : ''}" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}${n}</button>`;
@@ -43,6 +46,21 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
     return;
   }
   delete root.dataset.subjectKey;
+  // The behaviour tab has its own terrain selector: keep it across position ticks too.
+  if (cs.s.tab === 'behaviour' && search?.incident) {
+    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}`;
+    if (root.dataset.behaviourKey === key && root.querySelector('#behaviour-body')) {
+      root.querySelector('.tabs-sm')!.innerHTML = tabs;
+      wireTabs(root);
+      return;
+    }
+    root.dataset.behaviourKey = key;
+    root.innerHTML = `<div class="tabs-sm">${tabs}</div><div class="sb-body" id="behaviour-body"></div>`;
+    wireTabs(root);
+    behaviourTab(root.querySelector('#behaviour-body')!, cs.s.subject, Boolean(search.incident.ipp), a);
+    return;
+  }
+  delete root.dataset.behaviourKey;
   let body = '';
   if (!search?.incident) body = `<p class="muted pad">No open tasking. Start one from the top bar (New tasking); a pager callout opens one automatically.</p>`;
   else if (cs.s.tab === 'responders') body = ippBar(a) + respondersTab(search.responders, search.teams);
@@ -217,11 +235,20 @@ async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
         <label><input type="checkbox" name="selfHarmHistory" id="sh" ${s.selfHarmHistory ? 'checked' : ''} /> Previous self-harm attempt(s)</label>
         <label id="sh-means" style="${s.selfHarmHistory ? '' : 'display:none'}">Previous means <input name="selfHarmMeans" value="${v('selfHarmMeans')}" maxlength="200" placeholder="e.g. overdose, water" /></label>
       </div>
+      <div class="row2 lpb-pick">
+        <label>Behaviour category <select name="category" id="subject-category"><option value="">—</option>${LPB_GROUPS.map((g) => `<optgroup label="${esc(g.label)}">${g.slugs.map((slug) => { const p = profileBySlug(slug)!; return `<option value="${slug}" ${s.category === slug ? 'selected' : ''}>${esc(p.name)} (n=${p.n})</option>`; }).join('')}</optgroup>`).join('')}</select></label>
+        <label>Terrain <select name="terrain"><option value="">All / unknown</option>${LPB_TERRAINS.map((t) => `<option ${s.terrain === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+      </div>
+      <p class="muted small lpb-hint" id="lpb-hint">${lpbHint(s)}</p>
       <div class="save-row"><button type="submit" class="btn-sm primary">Save details</button><span class="dirty" id="subject-dirty"></span>${s.updatedAt ? `<span class="muted small right">saved ${fmtTime(s.updatedAt)}</span>` : ''}</div>
     </form>`;
   const form = el.querySelector<HTMLFormElement>('#subject-form')!;
   const dirty = el.querySelector<HTMLElement>('#subject-dirty')!;
-  form.addEventListener('input', () => (dirty.textContent = 'unsaved changes'));
+  form.addEventListener('input', () => {
+    dirty.textContent = 'unsaved changes';
+    const f = new FormData(form);
+    el.querySelector('#lpb-hint')!.innerHTML = lpbHint({ category: String(f.get('category') ?? ''), age: f.get('age') ? Number(f.get('age')) : undefined, despondent: f.get('despondent') === 'on', mentalHealth: f.get('mentalHealth') === 'on' });
+  });
   el.querySelector<HTMLInputElement>('#sh')!.addEventListener('change', (ev) => (el.querySelector<HTMLElement>('#sh-means')!.style.display = (ev.target as HTMLInputElement).checked ? '' : 'none'));
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -230,6 +257,7 @@ async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
       name: String(f.get('name') ?? ''), sex: String(f.get('sex') ?? ''), age: f.get('age') ? Number(f.get('age')) : null,
       clothing: String(f.get('clothing') ?? ''), description: String(f.get('description') ?? ''), locations: String(f.get('locations') ?? ''), history: String(f.get('history') ?? ''),
       despondent: f.get('despondent') === 'on', mentalHealth: f.get('mentalHealth') === 'on', selfHarmHistory: f.get('selfHarmHistory') === 'on', selfHarmMeans: String(f.get('selfHarmMeans') ?? ''),
+      category: String(f.get('category') ?? ''), terrain: String(f.get('terrain') ?? ''),
     };
     try {
       await put(`/api/incidents/${incidentId}/subject`, body);
@@ -256,6 +284,70 @@ async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
     await del(`/api/incidents/${incidentId}/subject/photo`);
     toast('Photo removed');
   });
+}
+
+/** Hint under the category picker: what is chosen, or what the flags and age suggest. */
+function lpbHint(s: { category?: string; age?: number; despondent?: boolean; mentalHealth?: boolean }): string {
+  const chosen = profileBySlug(s.category);
+  if (chosen) return `${esc(chosen.name)}: ${esc(chosen.definition)} Statistics on the Behaviour tab; distance rings on the map.`;
+  const sug = profileBySlug(suggestProfile(s));
+  return sug ? `Suggested from the details above: <b>${esc(sug.name)}</b>. Pick a category to get find-location statistics and distance rings around the planning point.` : 'Pick a category to get find-location statistics and distance rings around the planning point (MISPER-UK data).';
+}
+
+// ---------------------------------------------------------------- behaviour (lost person behaviour statistics)
+function bars<K extends string>(rows: { key: K; n: number; pct: number }[], cls = ''): string {
+  if (!rows.length) return '<p class="muted small">No data.</p>';
+  const max = rows[0].pct || 1;
+  return `<div class="lpb-bars ${cls}">${rows.map((r) => `<div class="lpb-bar"><span class="lk">${esc(r.key)}</span><span class="track"><span class="fill" style="width:${(r.pct / max) * 100}%"></span></span><span class="lv">${r.pct} %<small> ${r.n}</small></span></div>`).join('')}</div>`;
+}
+
+function behaviourTab(el: HTMLElement, subject: IncidentSubject | null | undefined, hasIpp: boolean, a: SidebarActions): void {
+  const profile = profileBySlug(subject?.category);
+  const attribution = `<p class="muted small lpb-src">${esc(LPB.source.attribution)} <a href="${esc(LPB.source.url)}" target="_blank" rel="noopener">misper.uk</a>. UK land-search data: use alongside tide, drift and local knowledge, not instead of them.</p>`;
+  if (subject === undefined) {
+    el.innerHTML = `<p class="muted pad">Loading subject details…</p>`;
+    return;
+  }
+  if (!profile) {
+    el.innerHTML = `<div class="pad"><p class="muted">No behaviour category yet. Set one on the <a href="#" data-tab="subject">Subject</a> tab (category and terrain) to see where this kind of missing person is usually found and how far from the planning point.</p>
+      ${immediateBlock()}</div>${attribution}`;
+    wireTabs(el);
+    return;
+  }
+  renderProfile(el, profile, subject?.terrain ?? '', hasIpp, attribution, a);
+}
+
+function immediateBlock(): string {
+  const im = LPB.immediate;
+  return `<h4>All categories · first hour</h4>
+    <div class="stats"><div class="stat"><span>Found alive</span><b>${im.foundAlivePct} %</b></div><div class="stat"><span>Fatality</span><b>${im.fatalityPct} %</b></div><div class="stat"><span>No trace</span><b>${im.noTracePct} %</b></div></div>
+    <p class="small">Within 500 m of the planning point: <b>${im.within500mPct} %</b>; within 1 km: <b>${im.within1kmPct} %</b>. ${esc(im.notes[0] ?? '')}</p>
+    <ul class="lpb-tactics">${im.tactics.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+}
+
+function renderProfile(el: HTMLElement, profile: LpbProfile, savedTerrain: string, hasIpp: boolean, attribution: string, a: SidebarActions): void {
+  const view = (el.querySelector<HTMLSelectElement>('#lpb-terrain')?.value ?? savedTerrain) || '';
+  const terrains = terrainsWithData(profile);
+  const rings = ringRadiiKm(profile);
+  const dist = profile.distanceKm;
+  const ringPcts = new Set(rings.map((r) => r.pct));
+  el.innerHTML = `<div class="lpb">
+      <div class="lpb-head"><b>${esc(profile.name)}</b> <span class="muted small">MISPER-UK · n=${profile.n}</span>${profile.lowNumbersCaution ? ' <span class="badge-s amber" title="The source warns the numbers in this category are small">low numbers</span>' : ''}</div>
+      <p class="muted small">${esc(profile.definition)}</p>
+      ${hasIpp ? `<p class="small">Rings on the map: ${rings.map((r) => `<b>${r.pct} %</b> within ${r.km} km`).join(', ') || 'none (half were found at the planning point)'}. ${rings.length ? '<button type="button" class="mini" id="lpb-fit">Show on map</button>' : ''}</p>` : '<p class="small amber">Set a planning point (Responders tab) to draw the distance rings on the map.</p>'}
+      <h4>Distance from planning point</h4>
+      <table class="lpb-table"><tbody>${dist.map((d) => `<tr class="${d.pct === 100 ? 'muted' : ''} ${ringPcts.has(d.pct) ? 'ring' : ''}"><td>${d.pct} %</td><td>found within</td><td class="num">${d.km < 1 ? `${Math.round(d.km * 1000)} m` : `${d.km} km`}</td><td class="muted small">${d.pct === 100 ? 'furthest case, not drawn' : ringPcts.has(d.pct) ? 'ring' : ''}</td></tr>`).join('')}</tbody></table>
+      <h4>Where found <select id="lpb-terrain" class="inline"><option value="">All terrains (n=${profile.n})</option>${terrains.map((t) => `<option ${t === view ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></h4>
+      ${view && !terrains.includes(view as (typeof terrains)[number]) ? `<p class="muted small">No ${esc(view)} cases in this category; showing all terrains.</p>${bars(locationShares(profile))}` : bars(locationShares(profile, view || undefined))}
+      ${view && view !== savedTerrain ? `<p class="muted small">Saved terrain for this subject: ${savedTerrain ? esc(savedTerrain) : 'none'}.</p>` : ''}
+      <h4>Outcome</h4>
+      ${bars(outcomeShares(profile), 'outcome')}
+      ${profile.notes.length ? `<h4>Notes from the study</h4>${profile.notes.map((n) => `<p class="small lpb-note">${esc(n)}</p>`).join('')}` : ''}
+      ${immediateBlock()}
+      <p class="muted small"><a href="${esc(profile.sourceUrl)}" target="_blank" rel="noopener">Source page</a></p>
+    </div>${attribution}`;
+  el.querySelector<HTMLSelectElement>('#lpb-terrain')!.addEventListener('change', () => renderProfile(el, profile, savedTerrain, hasIpp, attribution, a));
+  el.querySelector('#lpb-fit')?.addEventListener('click', () => a.fitRings());
 }
 
 /** Downscale on the client so phone photos stay small (JPEG, longest side `max` px). */

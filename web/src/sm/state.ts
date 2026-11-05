@@ -1,4 +1,4 @@
-import type { DashboardState, Fix, Principal, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
+import type { DashboardState, Fix, IncidentSubject, Principal, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
 
 export interface ConsoleState {
   state?: DashboardState;
@@ -10,8 +10,11 @@ export interface ConsoleState {
   loadedIncidentId?: string;
   fixTimes: number[];
   selected: Set<number>;
-  tab: 'responders' | 'teams' | 'targets' | 'subject';
-  layers: { tracks: boolean; coverage: boolean; targets: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  tab: 'responders' | 'teams' | 'targets' | 'subject' | 'behaviour';
+  layers: { tracks: boolean; coverage: boolean; targets: boolean; behaviour: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  /** Subject record for the open incident (fetched when `subjectUpdatedAt` changes); null = none recorded. */
+  subject?: IncidentSubject | null;
+  subjectKey?: string;
   /** Next map click sets the planning point. */
   pickingIpp: boolean;
   editingTargetId?: number;
@@ -30,7 +33,7 @@ class ConsoleStore {
     fixTimes: [],
     selected: new Set(),
     tab: 'responders',
-    layers: { tracks: true, coverage: true, targets: true, ais: false, labels: true, topo: false, follow: false },
+    layers: { tracks: true, coverage: true, targets: true, behaviour: true, ais: false, labels: true, topo: false, follow: false },
     pickingIpp: false,
     view: 'ops',
     section: 'users',
@@ -57,6 +60,8 @@ class ConsoleStore {
       this.s.search = m.search;
       if (m.search.incident?.id !== prevId) {
         this.s.tracks = new Map();
+        this.s.subject = undefined;
+        this.s.subjectKey = undefined;
         this.s.selected.clear();
         this.s.editingTargetId = undefined;
       }

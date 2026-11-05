@@ -195,4 +195,9 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX incident_conditions_incident ON incident_conditions(incident_id, at);
   `,
+  // 4 — subject behaviour profile (MISPER-UK category slug) and terrain, for search planning
+  `
+  ALTER TABLE incident_subjects ADD COLUMN category TEXT;
+  ALTER TABLE incident_subjects ADD COLUMN terrain TEXT;
+  `,
 ];

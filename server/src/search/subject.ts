@@ -1,15 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isTerrain, profileBySlug } from '../../../shared/lpb/index.js';
 import type { IncidentSubject } from '../../../shared/types.js';
 import { now, type Db } from '../db/index.js';
 
 interface SubjectRow {
   incident_id: string; name: string | null; sex: string | null; age: number | null; clothing: string | null; description: string | null;
   locations: string | null; history: string | null; despondent: number; mental_health: number; self_harm: number; self_harm_means: string | null;
+  category: string | null; terrain: string | null;
   photo_mime: string | null; photo_updated_at: string | null; updated_at: string; updated_by: number | null;
 }
 
-export type SubjectPatch = Partial<Pick<IncidentSubject, 'name' | 'sex' | 'age' | 'clothing' | 'description' | 'locations' | 'history' | 'despondent' | 'mentalHealth' | 'selfHarmHistory' | 'selfHarmMeans'>>;
+export type SubjectPatch = Partial<Pick<IncidentSubject, 'name' | 'sex' | 'age' | 'clothing' | 'description' | 'locations' | 'history' | 'despondent' | 'mentalHealth' | 'selfHarmHistory' | 'selfHarmMeans' | 'category' | 'terrain'>>;
 
 const PHOTO_MIMES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 export const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
@@ -46,16 +48,28 @@ export class Subjects {
       }
     }
     const sex = patch.sex === undefined ? (cur?.sex ?? null) : patch.sex ? String(patch.sex).slice(0, 20) : null;
+    let category = cur?.category ?? null;
+    if (patch.category !== undefined) {
+      if (!patch.category) category = null;
+      else if (profileBySlug(patch.category)) category = patch.category;
+      else throw new Error('unknown behaviour category');
+    }
+    let terrain = cur?.terrain ?? null;
+    if (patch.terrain !== undefined) {
+      if (!patch.terrain) terrain = null;
+      else if (isTerrain(patch.terrain)) terrain = patch.terrain;
+      else throw new Error('unknown terrain');
+    }
     const t = now();
     this.db.run(
-      `INSERT INTO incident_subjects (incident_id, name, sex, age, clothing, description, locations, history, despondent, mental_health, self_harm, self_harm_means, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO incident_subjects (incident_id, name, sex, age, clothing, description, locations, history, despondent, mental_health, self_harm, self_harm_means, category, terrain, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(incident_id) DO UPDATE SET name = excluded.name, sex = excluded.sex, age = excluded.age, clothing = excluded.clothing, description = excluded.description,
          locations = excluded.locations, history = excluded.history, despondent = excluded.despondent, mental_health = excluded.mental_health, self_harm = excluded.self_harm,
-         self_harm_means = excluded.self_harm_means, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+         self_harm_means = excluded.self_harm_means, category = excluded.category, terrain = excluded.terrain, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
       incidentId, text(patch.name, cur?.name ?? null), sex, age, text(patch.clothing, cur?.clothing ?? null), text(patch.description, cur?.description ?? null),
       text(patch.locations, cur?.locations ?? null), text(patch.history, cur?.history ?? null), flag(patch.despondent, cur?.despondent ?? 0), flag(patch.mentalHealth, cur?.mental_health ?? 0),
-      flag(patch.selfHarmHistory, cur?.self_harm ?? 0), text(patch.selfHarmMeans, cur?.self_harm_means ?? null), t, by ?? null,
+      flag(patch.selfHarmHistory, cur?.self_harm ?? 0), text(patch.selfHarmMeans, cur?.self_harm_means ?? null), category, terrain, t, by ?? null,
     );
     return this.get(incidentId)!;
   }
@@ -112,6 +126,8 @@ function toSubject(r: SubjectRow): IncidentSubject {
     mentalHealth: Boolean(r.mental_health),
     selfHarmHistory: Boolean(r.self_harm),
     selfHarmMeans: r.self_harm_means ?? undefined,
+    category: r.category ?? undefined,
+    terrain: r.terrain ?? undefined,
     hasPhoto: Boolean(r.photo_mime),
     photoUpdatedAt: r.photo_updated_at ?? undefined,
     updatedAt: r.updated_at,

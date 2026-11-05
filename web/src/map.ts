@@ -42,6 +42,9 @@ export class OpsMap {
   private pending?: { s: DashboardState; search?: SearchSnapshot };
   private markers: maplibregl.Marker[] = [];
   private searchMarkers: maplibregl.Marker[] = [];
+  private behaviourMarkers: maplibregl.Marker[] = [];
+  private behaviourFeatures: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  private behaviourOn = true;
   private fitted = false;
   private byUser = new Map<number, Fix[]>();
   private stationLat = 53.388;
@@ -58,6 +61,7 @@ export class OpsMap {
       station: { type: 'geojson', data: emptyFC() },
       incident: { type: 'geojson', data: emptyFC() },
       ipp: { type: 'geojson', data: emptyFC() },
+      behaviour: { type: 'geojson', data: emptyFC() },
       ais: { type: 'geojson', data: emptyFC() },
     };
     const layers: maplibregl.LayerSpecification[] = [
@@ -79,6 +83,9 @@ export class OpsMap {
       { id: 'station-dot', type: 'circle', source: 'station', paint: { 'circle-radius': 11, 'circle-color': '#2dd4bf', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } },
       { id: 'incident-halo', type: 'circle', source: 'incident', paint: { 'circle-radius': 34, 'circle-color': '#ef4444', 'circle-opacity': 0.3 } },
       { id: 'incident-dot', type: 'circle', source: 'incident', paint: { 'circle-radius': 15, 'circle-color': '#ef4444', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 4 } },
+      // Lost person behaviour rings (console only): % of subjects found within this distance of the IPP.
+      { id: 'behaviour-fill', type: 'fill', source: 'behaviour', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.05 } },
+      { id: 'behaviour-line', type: 'line', source: 'behaviour', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [4, 2], 'line-opacity': 0.9 } },
       // Search planning point (IPP): yellow diamond-ish marker every team can see.
       { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': 26, 'circle-color': '#facc15', 'circle-opacity': 0.25 } },
       { id: 'ipp-dot', type: 'circle', source: 'ipp', paint: { 'circle-radius': 12, 'circle-color': '#facc15', 'circle-stroke-color': '#111111', 'circle-stroke-width': 3 } },
@@ -207,6 +214,39 @@ export class OpsMap {
     }
   }
 
+  /**
+   * Draw the lost-person-behaviour distance rings around the planning point: each ring
+   * is the distance within which `pct` % of that category's subjects were found. Pass no
+   * point or no rings to clear. Labels sit at the north point like the station rings.
+   */
+  setBehaviourRings(ipp: { lat: number; lon: number } | undefined, rings: { pct: number; km: number }[]): void {
+    if (!this.map || !this.ready) return;
+    const m = this.map;
+    for (const mk of this.behaviourMarkers) mk.remove();
+    this.behaviourMarkers = [];
+    const features = ipp ? rings.map((r) => ({ ...ring(ipp.lat, ipp.lon, r.km), properties: { pct: r.pct, km: r.km } })) : [];
+    this.behaviourFeatures = features;
+    (m.getSource('behaviour') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features });
+    if (!ipp) return;
+    for (const r of rings) {
+      const north = ring(ipp.lat, ipp.lon, r.km, 4).geometry.coordinates[0][0];
+      const el = document.createElement('div');
+      el.className = 'map-label map-label-behaviour';
+      el.textContent = `${r.pct} % · ${r.km} km`;
+      el.style.display = this.behaviourOn ? '' : 'none';
+      this.behaviourMarkers.push(new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, -14] }).setLngLat([north[0], north[1]]).addTo(m));
+    }
+  }
+
+  /** Zoom to the behaviour rings (no-op when none are drawn). */
+  fitBehaviourRings(): void {
+    const pts = this.behaviourFeatures.flatMap((f) => flat(f.geometry));
+    if (!pts.length || !this.map) return;
+    const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
+    for (const p of pts) b.extend(p);
+    this.map.fitBounds(b, { padding: { top: 70, left: 40, right: 40, bottom: 40 }, duration: 400 });
+  }
+
   /** Replace the track history used for the tracks/coverage layers. */
   setTracks(byUser: Map<number, Fix[]>, search: SearchSnapshot | undefined, gapSec = 300): void {
     this.byUser = byUser;
@@ -230,7 +270,11 @@ export class OpsMap {
     (this.map.getSource('coverage') as GeoJSONSource | undefined)?.setData(coverage);
   }
 
-  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels' | 'topo', on: boolean): void {
+  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels' | 'topo' | 'behaviour-fill' | 'behaviour-line', on: boolean): void {
+    if (id === 'behaviour-line') {
+      this.behaviourOn = on;
+      for (const mk of this.behaviourMarkers) mk.getElement().style.display = on ? '' : 'none';
+    }
     if (id === 'labels') {
       this.labelsOn = on;
       for (const mk of this.searchMarkers) mk.getElement().style.display = on ? '' : 'none';

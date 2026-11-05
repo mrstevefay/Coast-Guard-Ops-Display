@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Lost person behaviour reference** (console → *Behaviour* tab, Subject form): the 15
+  MISPER-UK subject categories (dementia, despondent, children 1–16, walker solo/group,
+  water-related…) with distance-from-planning-point percentiles, where-found by terrain,
+  outcome and the study's notes; `shared/lpb/` dataset regenerated from misper.uk by
+  `scripts/fetch-misper.mjs`. The subject record gains `category` and `terrain` (schema
+  migration 4); the console map draws 50 / 70 / 90 % distance rings around the planning
+  point (layer toggle *Behaviour*); the end-of-mission report names the profile; the crew
+  app shows the category on the subject card. Data © The Centre for Search Research, used
+  with attribution; no reuse licence is published, so confirm before wider distribution.
 - **History and replay** (console → *History*): every past tasking and callout with who was on
   which team, targets, the planning point and conditions; a map replay from start to finish
   (play/pause, 10×–1200×, scrub) showing positions, tracks and coverage as they were; a
