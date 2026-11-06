@@ -395,6 +395,10 @@ export interface IncidentSubject {
   selfHarmHistory: boolean;
   /** Previous means of self-harm, if selfHarmHistory. */
   selfHarmMeans?: string;
+  /** Lost person behaviour category: a MISPER-UK profile slug (e.g. "dementia"), see shared/lpb. */
+  category?: string;
+  /** Terrain the subject went missing in (MISPER-UK terrain name), narrows the where-found statistics. */
+  terrain?: string;
   hasPhoto: boolean;
   photoUpdatedAt?: string;
   updatedAt?: string;

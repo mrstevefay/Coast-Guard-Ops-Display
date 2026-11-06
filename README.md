@@ -133,6 +133,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
 `PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
+`GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated);
 `GET /api/positions/latest`. WebSocket `/api/ws` carries `state`, `search`, `pos`, `auth`, `ping`.
 
 ```bash
@@ -160,6 +161,7 @@ server/src
   providers/        one module per source (see "Adding a provider")
   util/             erddap, xml, http, units, seaAreas
 shared/types.ts     DashboardState, SearchSnapshot, Fix… — shared by server and web
+shared/lpb          lost person behaviour: MISPER-UK dataset (generated), types, helpers (rings, shares)
 web/src             vanilla TS + Vite; main.ts = TV, m/ = crew PWA, sm/ = console, map.ts = MapLibre
 server/src/db       node:sqlite wrapper + numbered migrations
 server/src/auth     scrypt passwords, sessions + display keys, role middleware, routes
@@ -260,6 +262,26 @@ keys and a push subscription table). Both slot in without schema changes beyond 
 
 Further candidates, including a lost-person-behaviour search planning module, are in
 [docs/BACKLOG.md](docs/BACKLOG.md).
+
+## Lost person behaviour data (MISPER-UK)
+
+`shared/lpb/misperUk.ts` holds the UK missing-person statistics shown on the console's
+*Behaviour* tab and drawn as distance rings: 15 subject categories, 5,406 incidents, from
+[MISPER-UK](https://misper.uk/) by The Centre for Search Research (Mountain Rescue England
+and Wales data; UK Missing Person Behaviour Study 2011, Perkins, Roberts & Feeney). It is
+generated, not hand-typed:
+
+```bash
+node scripts/fetch-misper.mjs     # rewrites shared/lpb/misperUk.ts from the live site
+npm test                          # server/test/lpb.test.ts reconciles every category
+```
+
+The site publishes cumulative deciles (10–100 %), so the rings are the 50, 70 and 90 %
+distances (`RING_PCTS` in `shared/lpb/index.ts`); the 100 % value is the furthest case and
+is never drawn. These are UK land-search figures: use them with the tide, drift and local
+knowledge panels, not instead of them. misper.uk states no reuse licence; the data is used
+here with attribution for operational planning, and permission from The Centre for Search
+Research (tcsr.org.uk) should be confirmed before wider distribution.
 
 ## Conventions
 

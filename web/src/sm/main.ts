@@ -1,6 +1,7 @@
 import '../components.css';
 import './sm.css';
-import type { Fix, Principal, Target, TargetGeometry, Team, UserPublic } from '../../../shared/types';
+import { profileBySlug, ringRadiiKm } from '../../../shared/lpb/index';
+import type { Fix, IncidentSubject, Principal, Target, TargetGeometry, Team, UserPublic } from '../../../shared/types';
 import { get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -160,6 +161,8 @@ function render(): void {
   map.update(s, cs.s.search);
   map.setTracks(cs.s.tracks, cs.s.search, 300);
   void ensureTracksLoaded();
+  ensureSubjectLoaded();
+  map.setBehaviourRings(cs.s.search?.incident?.ipp, ringRadiiKm(profileBySlug(cs.s.subject?.category)));
   renderTop();
   renderSidebar(document.getElementById('sm-side')!, {
     locate: (lon, lat, zoom) => map!.flyTo(lon, lat, zoom ?? 15),
@@ -169,10 +172,27 @@ function render(): void {
     stopEditing: () => drawing?.stopEditing(),
     drawMode: () => drawing?.mode ?? 'static',
     pickIpp: () => setPickingIpp(!cs.s.pickingIpp),
+    fitRings: () => map?.fitBehaviourRings(),
   });
   renderLayers();
   renderStatus();
   if (cs.s.layers.follow && cs.s.search?.incident) map.fitAll(s, cs.s.search);
+}
+
+/** Fetch the subject record when the incident or its `subjectUpdatedAt` changes (never in the WS snapshot). */
+function ensureSubjectLoaded(): void {
+  const inc = cs.s.search?.incident;
+  if (!inc) {
+    if (cs.s.subjectKey !== undefined) { cs.s.subject = undefined; cs.s.subjectKey = undefined; }
+    return;
+  }
+  const key = `${inc.id}:${inc.subjectUpdatedAt ?? ''}`;
+  if (cs.s.subjectKey === key) return;
+  cs.s.subjectKey = key;
+  if (!inc.subjectUpdatedAt) { cs.s.subject = null; return; }
+  get<{ subject: IncidentSubject | null }>(`/api/incidents/${inc.id}/subject`)
+    .then((r) => { if (cs.s.subjectKey === key) { cs.s.subject = r.subject; cs.notify(); } })
+    .catch(() => { if (cs.s.subjectKey === key) cs.s.subjectKey = undefined; });
 }
 
 function setPickingIpp(on: boolean): void {
@@ -232,6 +252,7 @@ function applyLayers(): void {
   map.setLayerVisible('tracks-line', L.tracks);
   map.setLayerVisible('coverage-line', L.coverage);
   for (const id of ['targets-fill', 'targets-line', 'targets-point'] as const) map.setLayerVisible(id, L.targets);
+  for (const id of ['behaviour-fill', 'behaviour-line'] as const) map.setLayerVisible(id, L.behaviour);
   map.setLayerVisible('ais-dot', L.ais);
   map.setLayerVisible('labels', L.labels);
   map.setLayerVisible('topo', L.topo);

@@ -1,3 +1,4 @@
+import { LPB, profileBySlug, ringRadiiKm } from '../../../shared/lpb/index.js';
 import type { ConditionsSnapshot, IncidentReplay, ReplayEvent, ReplayFix, SearchIncident, Target, TargetGeometry, Team, TeamMembership } from '../../../shared/types.js';
 import type { AppConfig } from '../config.js';
 import { haversineKm } from '../util/units.js';
@@ -55,14 +56,23 @@ export interface IncidentReport {
   events: ReplayEvent[];
   conditions: ConditionsSnapshot[];
   totals: { responders: number; onScene: number; teams: number; targetsDone: number; targetsTotal: number; trackKm: number; sweptKm2: number; fixes: number };
-  subject?: { name?: string; sex?: string; age?: number };
+  subject?: ReportSubject;
+}
+
+export interface ReportSubject {
+  name?: string;
+  sex?: string;
+  age?: number;
+  /** MISPER-UK behaviour category slug and terrain, if recorded. */
+  category?: string;
+  terrain?: string;
 }
 
 const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60_000));
 
 export function buildReport(
   replay: IncidentReplay,
-  opts: { station: string; cfg: AppConfig; responseEvents: { userId: number; status: string; etaMin?: number; at: string }[]; subject?: { name?: string; sex?: string; age?: number } },
+  opts: { station: string; cfg: AppConfig; responseEvents: { userId: number; status: string; etaMin?: number; at: string }[]; subject?: ReportSubject },
 ): IncidentReport {
   const inc = replay.incident;
   const end = inc.endedAt ?? new Date().toISOString();
@@ -200,6 +210,10 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
       <tr><th>Warnings</th><td>${c.warnings.length ? c.warnings.map(esc).join('<br/>') : 'none'}</td></tr>
     </table>`;
   const subject = r.subject && (r.subject.name || r.subject.age !== undefined || r.subject.sex) ? `<p><b>Subject:</b> ${esc(r.subject.name ?? 'not recorded')}${r.subject.sex ? `, ${esc(r.subject.sex)}` : ''}${r.subject.age !== undefined ? `, ${r.subject.age} yrs` : ''}. Further details are held on the ops server and are not reproduced here.</p>` : '';
+  const profile = profileBySlug(r.subject?.category);
+  const behaviour = profile
+    ? `<p><b>Behaviour profile:</b> ${esc(profile.name)} (MISPER-UK, n=${profile.n}${profile.lowNumbersCaution ? ', low numbers' : ''})${r.subject?.terrain ? `, terrain ${esc(r.subject.terrain)}` : ''}. Found within ${ringRadiiKm(profile).map((x) => `${x.km} km (${x.pct} %)`).join(', ') || 'n/a'} of the planning point. ${esc(LPB.source.attribution)}</p>`
+    : '';
   return `<!doctype html>
 <html lang="en-IE"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${esc(title)} — ${esc(station.name)}</title>
 <style>
@@ -233,6 +247,7 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
 ${inc.lat !== undefined && inc.lon !== undefined ? `<p><b>Incident position:</b> ${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}</p>` : ''}
 ${inc.ipp ? `<p><b>Planning point:</b> ${esc(inc.ipp.label ?? 'IPP')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)} (set ${fmtHM(inc.ipp.setAt)})</p>` : ''}
 ${subject}
+${behaviour}
 
 <h2>Responders</h2>
 <table><thead><tr><th>Name</th><th>Team / callsign</th><th>Responded</th><th>Response time</th><th>On scene</th><th>Time to scene</th><th>Time on scene</th><th>Track</th><th>Final status</th></tr></thead><tbody>
