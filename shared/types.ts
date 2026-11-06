@@ -361,6 +361,28 @@ export interface PlanningPoint {
   setAt: string;
 }
 
+/**
+ * Typed locations on an incident. `lkp` (last known position) is the planning point the rings
+ * and terrain areas are drawn from; `pls` (place last seen) stands in when there is no LKP.
+ * `home` and `significant` are personal to the subject and never sent to display keys.
+ */
+export type PlanningPointKind = 'lkp' | 'pls' | 'home' | 'vehicle' | 'significant' | 'other';
+export const PLANNING_POINT_KINDS: PlanningPointKind[] = ['lkp', 'pls', 'significant', 'home', 'vehicle', 'other'];
+export const PRIVATE_POINT_KINDS: PlanningPointKind[] = ['home', 'significant'];
+export const POINT_KIND_LABEL: Record<PlanningPointKind, string> = { lkp: 'Last known position', pls: 'Place last seen', home: 'Home', vehicle: 'Vehicle', significant: 'Significant place', other: 'Other' };
+export const POINT_KIND_SHORT: Record<PlanningPointKind, string> = { lkp: 'LKP', pls: 'PLS', home: 'HOME', vehicle: 'VEH', significant: '★', other: 'PT' };
+
+export interface PlanningPointRow {
+  id: number;
+  incidentId: string;
+  kind: PlanningPointKind;
+  label?: string;
+  lat: number;
+  lon: number;
+  note?: string;
+  setAt: string;
+}
+
 export interface SearchIncident {
   id: string;
   kind: IncidentKind;
@@ -372,7 +394,10 @@ export interface SearchIncident {
   startedAt: string;
   endedAt?: string;
   endReason?: string;
+  /** The planning point the search is drawn from: the LKP, else the place last seen. */
   ipp?: PlanningPoint;
+  /** All typed points. Display keys receive only the non-personal kinds (see PRIVATE_POINT_KINDS). */
+  points?: PlanningPointRow[];
   /** Bumps when the subject record changes, so phones refetch it. Details are never in the snapshot. */
   subjectUpdatedAt?: string;
 }

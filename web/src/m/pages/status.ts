@@ -1,3 +1,4 @@
+import { POINT_KIND_LABEL } from '../../../../shared/types';
 import { profileBySlug } from '../../../../shared/lpb/index';
 import type { IncidentSubject, ResponseStatus, SearchIncident } from '../../../../shared/types';
 import { get, put } from '../../api';
@@ -79,12 +80,12 @@ export function renderStatus(root: HTMLElement): void {
   if (tracking.needsSetup) html += setupCard();
 
   if (inc) {
-    const ipp = search?.incident?.ipp;
+    const points = search?.incident?.points ?? (search?.incident?.ipp ? [{ id: 0, kind: 'lkp' as const, label: search.incident.ipp.label, lat: search.incident.ipp.lat, lon: search.incident.ipp.lon }] : []);
     html += `<section class="card incident-card ${tasking ? 'tasking' : ''}">
       <div class="k">${tasking ? 'TASKING STARTED' : 'RECEIVED'} ${fmtTime(startedAt)}</div>
       <div class="inc-text-m">${esc(inc.text)}</div>
       ${inc.lat !== undefined && inc.lon !== undefined ? `<div class="muted">${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}${myFix ? ` · ${fromMe(inc.lat, inc.lon)}` : ''}</div>` : ''}
-      ${ipp ? `<div class="ipp-row"><b>Planning point${ipp.label ? ` · ${esc(ipp.label)}` : ''}</b><div class="muted">${ipp.lat.toFixed(4)}, ${ipp.lon.toFixed(4)}${myFix ? ` · ${fromMe(ipp.lat, ipp.lon)}` : ''}</div></div>` : ''}
+      ${points.map((p) => `<div class="ipp-row k-${p.kind}"><b>${esc(POINT_KIND_LABEL[p.kind])}${p.label ? ` · ${esc(p.label)}` : ''}</b><div class="muted">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}${myFix ? ` · ${fromMe(p.lat, p.lon)}` : ''}</div></div>`).join('')}
     </section>`;
 
     // respond buttons

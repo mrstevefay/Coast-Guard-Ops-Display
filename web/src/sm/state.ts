@@ -1,4 +1,4 @@
-import type { DashboardState, Fix, IncidentSubject, Principal, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
+import type { DashboardState, Fix, IncidentSubject, PlanningPointKind, Principal, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
 
 export interface ConsoleState {
   state?: DashboardState;
@@ -15,8 +15,8 @@ export interface ConsoleState {
   /** Subject record for the open incident (fetched when `subjectUpdatedAt` changes); null = none recorded. */
   subject?: IncidentSubject | null;
   subjectKey?: string;
-  /** Next map click sets the planning point. */
-  pickingIpp: boolean;
+  /** Next map click places this kind of point (or moves `pointId`). */
+  picking?: { kind: PlanningPointKind; pointId?: number };
   editingTargetId?: number;
   /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>); 'history' = past incidents (#history/<id>). */
   view: 'ops' | 'settings' | 'history';
@@ -34,7 +34,6 @@ class ConsoleStore {
     selected: new Set(),
     tab: 'responders',
     layers: { tracks: true, coverage: true, targets: true, behaviour: true, ais: false, labels: true, topo: false, follow: false },
-    pickingIpp: false,
     view: 'ops',
     section: 'users',
   };

@@ -1,7 +1,7 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import type { Fix, IncidentSubject, Principal, Target, TargetGeometry, Team, UserPublic } from '../../../shared/types';
+import { POINT_KIND_LABEL, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
 import { get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -146,14 +146,14 @@ function render(): void {
         onEdited: async (id, geometry) => { await patch(`/api/targets/${id}`, { geometry }); },
         onModeChange: (mode) => { cs.s.editingTargetId = mode === 'select' ? drawing?.editingTargetId : undefined; renderDrawHint(mode); cs.notify(); },
       });
-      // Planning point: one click on the map while armed.
+      // Planning points: one click on the map while armed places (or moves) a point.
       map!.getMap()!.on('click', (e) => {
-        if (!cs.s.pickingIpp) return;
+        const pick = cs.s.picking;
+        if (!pick) return;
         const inc = cs.s.search?.incident;
-        setPickingIpp(false);
+        setPicking(undefined);
         if (!inc) return;
-        const label = prompt('Label for the planning point (optional, e.g. "Car park" or "LKP")', cs.s.search?.incident?.ipp?.label ?? '') ?? '';
-        patch(`/api/incidents/${inc.id}`, { ipp: { lat: e.lngLat.lat, lon: e.lngLat.lng, label } }).then(() => toast('Planning point set'), (err) => toast(err instanceof Error ? err.message : 'failed', true));
+        void placePoint(inc.id, pick, e.lngLat.lat, e.lngLat.lng);
       });
       applyLayers();
     });
@@ -171,7 +171,7 @@ function render(): void {
     editTarget: (t) => drawing?.editTarget(t),
     stopEditing: () => drawing?.stopEditing(),
     drawMode: () => drawing?.mode ?? 'static',
-    pickIpp: () => setPickingIpp(!cs.s.pickingIpp),
+    pickPoint: (kind, pointId) => setPicking(cs.s.picking && cs.s.picking.kind === kind && cs.s.picking.pointId === pointId ? undefined : { kind, pointId }),
     fitRings: () => map?.fitBehaviourRings(),
   });
   renderLayers();
@@ -183,7 +183,7 @@ function render(): void {
 function behaviourRings(): { pct: number; km: number }[] {
   const s = cs.s.subject;
   if (!s?.category) return [];
-  const plan = buildPlan({ category: s.category, terrain: s.terrain, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown });
+  const plan = buildPlan({ category: s.category, terrain: s.terrain, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown || hasSignificantPoint() });
   return plan?.rings.items.map((r) => ({ pct: r.pct, km: r.km })) ?? [];
 }
 
@@ -203,15 +203,45 @@ function ensureSubjectLoaded(): void {
     .catch(() => { if (cs.s.subjectKey === key) cs.s.subjectKey = undefined; });
 }
 
-function setPickingIpp(on: boolean): void {
-  cs.s.pickingIpp = on;
-  document.getElementById('sm-map-wrap')?.classList.toggle('picking', on);
+/** A significant place marked on the map counts as "significant place known" for the plan. */
+export function hasSignificantPoint(): boolean {
+  return (cs.s.search?.incident?.points ?? []).some((p) => p.kind === 'significant');
+}
+
+function setPicking(pick: { kind: PlanningPointKind; pointId?: number } | undefined): void {
+  cs.s.picking = pick;
+  document.getElementById('sm-map-wrap')?.classList.toggle('picking', Boolean(pick));
   const hint = document.getElementById('draw-hint');
-  if (hint && on) {
-    hint.textContent = 'Click the map to set the search planning point (Esc to cancel)';
+  if (hint && pick) {
+    hint.textContent = `Click the map to ${pick.pointId ? 'move' : 'place'}: ${POINT_KIND_LABEL[pick.kind]} (Esc to cancel)`;
     hint.style.display = 'block';
-  } else if (hint && !on && drawing?.mode === 'static') hint.style.display = 'none';
+  } else if (hint && !pick && drawing?.mode === 'static') hint.style.display = 'none';
   cs.notify();
+}
+
+const POINT_PROMPT: Record<PlanningPointKind, string> = {
+  lkp: 'Label for the last known position (optional, e.g. "Car park", "Phone ping")',
+  pls: 'Label for the place last seen (optional, e.g. "Seen by dog walker")',
+  home: 'Label for home (optional, e.g. "Home", "Care home")',
+  vehicle: 'Label for the vehicle (optional, e.g. "Silver Golf 12-D-…")',
+  significant: 'What is this place to them? (e.g. "Favourite bench", "Where his wife\'s ashes were scattered")',
+  other: 'Label for this point',
+};
+
+async function placePoint(incidentId: string, pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
+  try {
+    if (pick.pointId) {
+      await patch(`/api/points/${pick.pointId}`, { lat, lon });
+      toast(`${POINT_KIND_LABEL[pick.kind]} moved`);
+      return;
+    }
+    const label = prompt(POINT_PROMPT[pick.kind], '');
+    if (label === null) return; // cancelled
+    await post(`/api/incidents/${incidentId}/points`, { kind: pick.kind, label, lat, lon });
+    toast(`${POINT_KIND_LABEL[pick.kind]} set`);
+  } catch (err) {
+    toast(err instanceof Error ? err.message : 'failed', true);
+  }
 }
 
 function renderTop(): void {
@@ -382,7 +412,7 @@ function onKey(ev: KeyboardEvent): void {
   if ((ev.target as HTMLElement).matches('input, textarea, select')) return;
   const k = ev.key.toLowerCase();
   if (k === 'escape' && modalOpen()) return closeModal();
-  if (k === 'escape' && cs.s.pickingIpp) return setPickingIpp(false);
+  if (k === 'escape' && cs.s.picking) return setPicking(undefined);
   if (cs.s.view !== 'ops' || !drawing) return;
   if (k === 'escape') drawing.stopEditing();
   else if (k === 'p') drawing.setMode('point');

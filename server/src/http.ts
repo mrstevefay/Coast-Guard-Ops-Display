@@ -213,12 +213,16 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
           if (pending) return;
           pending = setTimeout(() => {
             pending = undefined;
-            hub.sendAuthenticated({ type: 'search', search: search.snapshot() });
+            // Display keys get the snapshot without personal points (home, significant places).
+            const full = { type: 'search' as const, search: search.snapshot() };
+            const forDisplay = { type: 'search' as const, search: search.snapshot(true) };
+            hub.send(full, (p) => p.kind === 'user' || (p.kind === 'open' && cfg.auth.open));
+            hub.send(forDisplay, (p) => p.kind === 'display');
           }, 250);
           pending.unref?.();
         };
         search.on('change', push);
-        hub.onJoin = (_p, send) => send({ type: 'search', search: search.snapshot() });
+        hub.onJoin = (p, send) => send({ type: 'search', search: search.snapshot(p.kind === 'display') });
         app.addHook('onClose', async () => {
           search.off('change', push);
           if (pending) clearTimeout(pending);

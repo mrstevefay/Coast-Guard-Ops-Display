@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Fix, IncidentKind, IncidentReplay, IncidentSummary, ModeState, MusterState, PlanningPoint, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
+import { PRIVATE_POINT_KINDS } from '../../../shared/types.js';
+import type { Fix, IncidentKind, IncidentReplay, IncidentSummary, ModeState, MusterState, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import type { AppConfig } from '../config.js';
 import { now, type Db } from '../db/index.js';
@@ -9,6 +10,7 @@ import type { StateStore } from '../state.js';
 import { validateGeometry } from './geometry.js';
 import { listSummaries, replayParts, snapshotConditions } from './history.js';
 import { buildReport, renderReportHtml, type IncidentReport } from './report.js';
+import { Points } from './points.js';
 import { Subjects } from './subject.js';
 import type { TrackContext, Tracking } from './tracking.js';
 
@@ -29,6 +31,7 @@ const TARGET_STATUSES: TargetStatus[] = ['planned', 'assigned', 'in-progress', '
  */
 export class SearchService extends EventEmitter implements TrackContext {
   readonly subjects: Subjects;
+  readonly points: Points;
 
   constructor(
     private readonly db: Db,
@@ -39,6 +42,7 @@ export class SearchService extends EventEmitter implements TrackContext {
   ) {
     super();
     this.subjects = new Subjects(db, path.join(cfg.server.dataDir, 'subjects'));
+    this.points = new Points(db);
     store.on('mode', (m: ModeState, prev: ModeState) => this.onMode(m, prev));
     tracking.on('fix', () => this.touchMuster());
     this.reconcile(store.getMode());
@@ -103,7 +107,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at, created_by) VALUES (?, 'tasking', ?, ?, ?, ?, 'app', ?, ?)", id, text.slice(0, 2000), t, finite(input.lat), finite(input.lon), t, input.createdBy ?? null);
     this.recordConditions(id, 'start');
     this.changed();
-    return toIncident(this.incidentById(id)!, this.subjects);
+    return toIncident(this.incidentById(id)!, this.subjects, this.points);
   }
 
   /** Close the open tasking (callouts are closed by stand-down). */
@@ -115,17 +119,43 @@ export class SearchService extends EventEmitter implements TrackContext {
     this.changed();
   }
 
-  /** Set or clear the search planning point (IPP / LKP) shown on every map. */
-  setPlanningPoint(incidentId: string, ipp: { lat: number; lon: number; label?: string } | null): SearchIncident {
+  /** Set or clear the last known position (the planning point shown on every map). */
+  setPlanningPoint(incidentId: string, ipp: { lat: number; lon: number; label?: string } | null, by?: number): SearchIncident {
     this.requireOpen(incidentId);
-    if (ipp) {
-      if (!(Number.isFinite(ipp.lat) && Math.abs(ipp.lat) <= 90 && Number.isFinite(ipp.lon) && Math.abs(ipp.lon) <= 180)) throw new Error('invalid position');
-      this.db.run('UPDATE incidents SET ipp_lat = ?, ipp_lon = ?, ipp_label = ?, ipp_set_at = ? WHERE id = ?', ipp.lat, ipp.lon, ipp.label?.trim().slice(0, 80) || null, now(), incidentId);
-    } else {
-      this.db.run('UPDATE incidents SET ipp_lat = NULL, ipp_lon = NULL, ipp_label = NULL, ipp_set_at = NULL WHERE id = ?', incidentId);
-    }
+    this.points.setLkp(incidentId, ipp, by);
     this.changed();
-    return toIncident(this.incidentById(incidentId)!, this.subjects);
+    return this.incident(incidentId)!;
+  }
+
+  /** Add a typed point (LKP / PLS replace the existing one). */
+  addPoint(incidentId: string, input: Parameters<Points['add']>[1], by?: number) {
+    this.requireOpen(incidentId);
+    const p = this.points.add(incidentId, input, by);
+    this.changed();
+    return p;
+  }
+
+  updatePoint(id: number, input: Parameters<Points['update']>[1], by?: number) {
+    const cur = this.points.get(id);
+    if (!cur) throw new Error('point not found');
+    this.requireOpen(cur.incidentId);
+    const p = this.points.update(id, input, by);
+    this.changed();
+    return p;
+  }
+
+  removePoint(id: number) {
+    const cur = this.points.get(id);
+    if (!cur) return undefined;
+    this.requireOpen(cur.incidentId);
+    this.points.remove(id);
+    this.changed();
+    return cur;
+  }
+
+  incident(id: string): SearchIncident | undefined {
+    const r = this.incidentById(id);
+    return r ? toIncident(r, this.subjects, this.points) : undefined;
   }
 
   /** Subject details changed: bump the snapshot so phones refetch. */
@@ -142,7 +172,7 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   listIncidents(limit = 50): SearchIncident[] {
-    return this.db.all<IncidentRow>('SELECT * FROM incidents ORDER BY started_at DESC LIMIT ?', Math.min(limit, 500)).map((r) => toIncident(r, this.subjects));
+    return this.db.all<IncidentRow>('SELECT * FROM incidents ORDER BY started_at DESC LIMIT ?', Math.min(limit, 500)).map((r) => toIncident(r, this.subjects, this.points));
   }
 
   // ------------------------------------------------------------ responses
@@ -172,7 +202,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     const responders = this.responders(incidentId);
     const parts = replayParts(this.db, incidentId, this.users, responders.map((r) => r.userId));
     const teams = this.teams(incidentId).map((t) => ({ ...t, memberships: parts.memberships.get(t.id) ?? [] }));
-    return { incident: toIncident(row, this.subjects), teams, targets: this.targets(incidentId), responders, users: parts.users, fixes: parts.fixes, events: parts.events, conditions: parts.conditions };
+    return { incident: toIncident(row, this.subjects, this.points), teams, targets: this.targets(incidentId), responders, users: parts.users, fixes: parts.fixes, events: parts.events, conditions: parts.conditions };
   }
 
   report(incidentId: string): { report: IncidentReport; replay: IncidentReplay } | undefined {
@@ -384,7 +414,8 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   // ------------------------------------------------------------ snapshot
-  snapshot(): SearchSnapshot {
+  /** `forDisplay`: a display key (TV, Pi mirror) is asking; personal points (home, significant places) are left out. */
+  snapshot(forDisplay = false): SearchSnapshot {
     const inc = this.openIncident();
     if (!inc) return { responders: [], teams: [], targets: [], latest: {}, updatedAt: now() };
     const members = this.memberIndex(inc.id);
@@ -393,7 +424,9 @@ export class SearchService extends EventEmitter implements TrackContext {
       const m = members.get(f.userId);
       latest[f.userId] = { ...f, teamId: m?.teamId, callsign: m?.callsign ?? f.callsign };
     }
-    return { incident: toIncident(inc, this.subjects), responders: this.responders(inc.id), teams: this.teams(inc.id), targets: this.targets(inc.id), latest, updatedAt: now() };
+    const incident = toIncident(inc, this.subjects, this.points);
+    if (forDisplay) incident.points = incident.points?.filter((p) => !PRIVATE_POINT_KINDS.includes(p.kind));
+    return { incident, responders: this.responders(inc.id), teams: this.teams(inc.id), targets: this.targets(inc.id), latest, updatedAt: now() };
   }
 
   // ------------------------------------------------------------ TrackContext
@@ -484,8 +517,8 @@ function finite(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-function toIncident(r: IncidentRow, subjects: Subjects): SearchIncident {
-  const ipp: PlanningPoint | undefined = r.ipp_lat !== null && r.ipp_lon !== null ? { lat: r.ipp_lat, lon: r.ipp_lon, label: r.ipp_label ?? undefined, setAt: r.ipp_set_at ?? r.started_at } : undefined;
+function toIncident(r: IncidentRow, subjects: Subjects, points: Points): SearchIncident {
+  const ipp = points.planningPoint(r.id);
   return {
     id: r.id,
     kind: r.kind ?? 'callout',
@@ -498,6 +531,7 @@ function toIncident(r: IncidentRow, subjects: Subjects): SearchIncident {
     endedAt: r.ended_at ?? undefined,
     endReason: r.end_reason ?? undefined,
     ipp,
+    points: points.list(r.id),
     subjectUpdatedAt: subjects.updatedAt(r.id),
   };
 }

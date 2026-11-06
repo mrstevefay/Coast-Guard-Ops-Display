@@ -1,5 +1,5 @@
 import { LPB, LPB_GROUPS, LPB_TERRAINS, buildPlan, outcomeShares, profileBySlug, suggestProfile, terrainsWithData, type Basis, type PlanRing, type SearchPlan, type Tactic } from '../../../shared/lpb/index';
-import type { IncidentSubject, ResponderRow, Target, TargetStatus, Team, TeamStatus } from '../../../shared/types';
+import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
 import { del, get, patch, post, put } from '../api';
 import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
@@ -13,8 +13,8 @@ export interface SidebarActions {
   editTarget: (t: Target) => void;
   stopEditing: () => void;
   drawMode: () => string;
-  /** Arm the map so the next click sets the planning point. */
-  pickIpp: () => void;
+  /** Arm the map so the next click places a point of this kind (or moves `pointId`). Calling again cancels. */
+  pickPoint: (kind: PlanningPointKind, pointId?: number) => void;
   /** Zoom the map to the lost-person-behaviour rings. */
   fitRings: () => void;
 }
@@ -48,7 +48,7 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   delete root.dataset.subjectKey;
   // The behaviour tab has its own terrain selector: keep it across position ticks too.
   if (cs.s.tab === 'behaviour' && search?.incident) {
-    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}`;
+    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}:${significantPoints().map((p) => p.id).join(',')}`;
     if (root.dataset.behaviourKey === key && root.querySelector('#behaviour-body')) {
       root.querySelector('.tabs-sm')!.innerHTML = tabs;
       wireTabs(root);
@@ -63,7 +63,7 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   delete root.dataset.behaviourKey;
   let body = '';
   if (!search?.incident) body = `<p class="muted pad">No open tasking. Start one from the top bar (New tasking); a pager callout opens one automatically.</p>`;
-  else if (cs.s.tab === 'responders') body = ippBar(a) + respondersTab(search.responders, search.teams);
+  else if (cs.s.tab === 'responders') body = pointsBar() + respondersTab(search.responders, search.teams);
   else if (cs.s.tab === 'teams') body = teamsTab(search.teams, search.responders, search.targets);
   else if (cs.s.tab === 'targets') body = targetsTab(search.targets, search.teams, a.drawMode());
   else body = `<p class="muted pad">No open tasking.</p>`;
@@ -76,10 +76,26 @@ function wireTabs(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => { cs.s.tab = b.dataset.tab as typeof cs.s.tab; cs.notify(); }));
 }
 
-function ippBar(_a: SidebarActions): string {
-  const ipp = cs.s.search?.incident?.ipp;
-  if (ipp) return `<div class="ipp-bar"><b>IPP</b> ${esc(ipp.label ?? '')} <span class="muted">${ipp.lat.toFixed(4)}, ${ipp.lon.toFixed(4)} · ${fmtTime(ipp.setAt)}</span><span class="right"></span><button class="mini" data-action="ipp-locate" title="Locate">◎</button><button class="mini" data-action="ipp-pick" title="Move">Move</button><button class="mini danger" data-action="ipp-clear" title="Clear">×</button></div>`;
-  return `<div class="ipp-bar"><b>IPP</b> <span class="muted">No planning point yet.</span><span class="right"></span><button class="btn-sm ${cs.s.pickingIpp ? 'on' : ''}" data-action="ipp-pick">${cs.s.pickingIpp ? 'Click the map…' : 'Set planning point'}</button></div>`;
+const significantPoints = () => (cs.s.search?.incident?.points ?? []).filter((p) => p.kind === 'significant');
+
+function pointsBar(): string {
+  const pts = cs.s.search?.incident?.points ?? [];
+  const pick = cs.s.picking;
+  const has = (k: PlanningPointKind) => pts.some((p) => p.kind === k);
+  const addable = PLANNING_POINT_KINDS.filter((k) => !((k === 'lkp' || k === 'pls') && has(k)));
+  const rows = pts
+    .map((p) => `<div class="pt-row k-${p.kind}"><span class="pt-kind" title="${esc(POINT_KIND_LABEL[p.kind])}">${esc(POINT_KIND_SHORT[p.kind])}</span>
+      <span class="grow"><b>${esc(p.label ?? POINT_KIND_LABEL[p.kind])}</b> <span class="muted small">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)} · ${fmtTime(p.setAt)}</span>${p.note ? `<span class="muted small pt-note">${esc(p.note)}</span>` : ''}</span>
+      <button class="mini" data-pt-locate="${p.id}" title="Locate">◎</button><button class="mini ${pick?.pointId === p.id ? 'on' : ''}" data-pt-move="${p.id}" title="Move">Move</button><button class="mini danger" data-pt-del="${p.id}" title="Remove">×</button></div>`)
+    .join('');
+  return `<div class="points-bar">
+      <div class="pt-head"><b>Points</b><span class="right"></span>
+        ${has('lkp') ? '' : `<button class="btn-sm ${pick?.kind === 'lkp' && !pick.pointId ? 'on' : ''}" data-pt-add="lkp">${pick?.kind === 'lkp' && !pick.pointId ? 'Click the map…' : 'Set LKP'}</button>`}
+        <select id="pt-add" title="Add a point"><option value="">+ Add point…</option>${addable.map((k) => `<option value="${k}">${esc(POINT_KIND_LABEL[k])}</option>`).join('')}</select>
+      </div>
+      ${rows || '<p class="muted small pad0">Start with the last known position. Then add the place last seen, home, vehicle and any place significant to them: they shape the plan and the search areas.</p>'}
+      ${pick ? `<p class="small amber pad0">Click the map to ${pick.pointId ? 'move' : 'place'}: ${esc(POINT_KIND_LABEL[pick.kind])} (Esc to cancel)</p>` : ''}
+    </div>`;
 }
 
 function respondersTab(responders: ResponderRow[], teams: Team[]): string {
@@ -346,12 +362,13 @@ function immediateBlock(plan?: SearchPlan): string {
 }
 
 function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attribution: string, a: SidebarActions, terrainView: string): void {
-  const plan = buildPlan({ category: s.category!, terrain: terrainView || undefined, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown }, planContext());
+  const sig = significantPoints();
+  const plan = buildPlan({ category: s.category!, terrain: terrainView || undefined, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown || sig.length > 0 }, planContext());
   if (!plan) return;
   const { profile } = plan;
   const terrains = terrainsWithData(profile);
   const saved = s.terrain ?? '';
-  const factors = [s.sex, s.age !== undefined ? `${s.age} yrs` : '', terrainView || 'terrain unknown', s.suicideThreatened ? 'threat made' : '', s.selfHarmHistory ? 'previous attempts' : '', s.depression ? 'depression' : '', s.significantPlaceKnown ? 'significant place known' : ''].filter(Boolean);
+  const factors = [s.sex, s.age !== undefined ? `${s.age} yrs` : '', terrainView || 'terrain unknown', s.suicideThreatened ? 'threat made' : '', s.selfHarmHistory ? 'previous attempts' : '', s.depression ? 'depression' : '', s.significantPlaceKnown || sig.length ? `significant place known${sig.length ? `: ${sig.map((p) => p.label ?? 'marked').join(', ')}` : ''}` : ''].filter(Boolean);
   const c = plan.condition;
   const isridRings = plan.isrid ? plan.isrid.rings.map((r) => `${r.pct} % ${km(r.km)}`).join(' · ') : '';
   el.innerHTML = `<div class="lpb">
@@ -360,7 +377,7 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
 
       <h4>Rings ${srcTag(plan.rings.basis)}</h4>
       ${plan.rings.items.length ? `<p class="small">${plan.rings.items.map(ringText).join(', ')}.${hasIpp ? ' <button type="button" class="mini" id="lpb-fit">Show on map</button>' : ''}</p>` : '<p class="small">Half or more of this category are recorded at the planning point itself; no ring is drawn below the first non-zero distance.</p>'}
-      ${hasIpp ? '' : '<p class="small amber">Set a planning point (Responders tab) to draw the rings on the map.</p>'}
+      ${hasIpp ? '' : '<p class="small amber">Set the last known position (Responders tab, Points) to draw the rings on the map.</p>'}
       ${plan.studyDistance ? `<p class="small">2011 study, ${esc(plan.studyDistance.basis.ref.replace(/^Table \d+ /, ''))} ${srcTag(plan.studyDistance.basis)}: ${plan.studyDistance.points.filter((x) => x.pct < 100).map((x) => `<b>${x.pct} %</b> ${km(x.km)}`).join(', ')}; furthest ${km(plan.studyDistance.points[plan.studyDistance.points.length - 1].km)}.${plan.studyDistance.stepPct > 10 ? ` <span class="muted">(${plan.studyDistance.stepPct} % steps: fewer cases)</span>` : ''}</p>` : ''}
       ${plan.rawDistancesKm ? `<p class="small">2011 study, every case ${srcTag(plan.rawDistancesKm.basis)}: ${plan.rawDistancesKm.km.map(km).join(', ')}.</p>` : ''}
       ${plan.isrid ? `<p class="small">ISRID ${esc(plan.isrid.group.name)}, ${esc(plan.isrid.ecoregion.toLowerCase())} ${srcTag(plan.isrid.basis)}: ${isridRings}.</p>` : ''}
@@ -418,9 +435,15 @@ function wire(root: HTMLElement, a: SidebarActions): void {
   root.querySelectorAll<HTMLInputElement>('[data-sel]').forEach((c) => c.addEventListener('change', () => { const id = Number(c.dataset.sel); if (c.checked) cs.s.selected.add(id); else cs.s.selected.delete(id); refresh(); }));
   root.querySelector<HTMLButtonElement>('[data-action=clear-sel]')?.addEventListener('click', () => { cs.s.selected.clear(); refresh(); });
   root.querySelectorAll<HTMLButtonElement>('[data-locate]').forEach((b) => b.addEventListener('click', (ev) => { ev.preventDefault(); const [lon, lat] = b.dataset.locate!.split(',').map(Number); a.locate(lon, lat, 16); }));
-  root.querySelector<HTMLButtonElement>('[data-action=ipp-pick]')?.addEventListener('click', () => a.pickIpp());
-  root.querySelector<HTMLButtonElement>('[data-action=ipp-locate]')?.addEventListener('click', () => { const p = search?.incident?.ipp; if (p) a.locate(p.lon, p.lat, 16); });
-  root.querySelector<HTMLButtonElement>('[data-action=ipp-clear]')?.addEventListener('click', async () => { if (incidentId && confirm('Clear the planning point?')) await patch(`/api/incidents/${incidentId}`, { ipp: null }); });
+  const pointById = (id: number) => search?.incident?.points?.find((p) => p.id === id);
+  root.querySelectorAll<HTMLButtonElement>('[data-pt-add]').forEach((b) => b.addEventListener('click', () => a.pickPoint(b.dataset.ptAdd as PlanningPointKind)));
+  root.querySelector<HTMLSelectElement>('#pt-add')?.addEventListener('change', (ev) => { const v = (ev.target as HTMLSelectElement).value as PlanningPointKind; if (v) a.pickPoint(v); });
+  root.querySelectorAll<HTMLButtonElement>('[data-pt-locate]').forEach((b) => b.addEventListener('click', () => { const p = pointById(Number(b.dataset.ptLocate)); if (p) a.locate(p.lon, p.lat, 16); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-pt-move]').forEach((b) => b.addEventListener('click', () => { const p = pointById(Number(b.dataset.ptMove)); if (p) a.pickPoint(p.kind, p.id); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-pt-del]').forEach((b) => b.addEventListener('click', async () => {
+    const p = pointById(Number(b.dataset.ptDel));
+    if (p && confirm(`Remove ${POINT_KIND_LABEL[p.kind]}${p.label ? ` "${p.label}"` : ''}?`)) await del(`/api/points/${p.id}`);
+  }));
   root.querySelector<HTMLSelectElement>('#assign-team')?.addEventListener('change', async (ev) => {
     const sel = ev.target as HTMLSelectElement;
     if (!sel.value || !incidentId) return;

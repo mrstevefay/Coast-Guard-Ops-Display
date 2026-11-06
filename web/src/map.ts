@@ -1,6 +1,6 @@
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { DashboardState, Fix, SearchSnapshot } from '../../shared/types';
+import { POINT_KIND_SHORT, type DashboardState, type Fix, type PlanningPointRow, type SearchSnapshot } from '../../shared/types';
 import { addSearchLayers, emptyFC, setSearchData, tracksFC, type SEARCH_LAYER_IDS } from './search/layers';
 
 /** Great-circle ring polygon around a point, radius in km. */
@@ -87,8 +87,19 @@ export class OpsMap {
       { id: 'behaviour-fill', type: 'fill', source: 'behaviour', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.05 } },
       { id: 'behaviour-line', type: 'line', source: 'behaviour', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [4, 2], 'line-opacity': 0.9 } },
       // Search planning point (IPP): yellow diamond-ish marker every team can see.
-      { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': 26, 'circle-color': '#facc15', 'circle-opacity': 0.25 } },
-      { id: 'ipp-dot', type: 'circle', source: 'ipp', paint: { 'circle-radius': 12, 'circle-color': '#facc15', 'circle-stroke-color': '#111111', 'circle-stroke-width': 3 } },
+      // Planning points: LKP yellow (the point the search is drawn from), PLS orange, significant places pink, home/vehicle grey-blue.
+      { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': ['match', ['get', 'kind'], 'lkp', 26, 'pls', 20, 0], 'circle-color': ['match', ['get', 'kind'], 'pls', '#fb923c', '#facc15'], 'circle-opacity': 0.25 } },
+      {
+        id: 'ipp-dot',
+        type: 'circle',
+        source: 'ipp',
+        paint: {
+          'circle-radius': ['match', ['get', 'kind'], 'lkp', 12, 'pls', 10, 8],
+          'circle-color': ['match', ['get', 'kind'], 'lkp', '#facc15', 'pls', '#fb923c', 'significant', '#f472b6', 'home', '#94a3b8', 'vehicle', '#60a5fa', '#cbd5e1'],
+          'circle-stroke-color': '#111111',
+          'circle-stroke-width': ['match', ['get', 'kind'], 'lkp', 3, 2],
+        },
+      },
     );
 
     this.map = new maplibregl.Map({
@@ -133,9 +144,10 @@ export class OpsMap {
       features: this.opts.showAis === false ? [] : (s.ais?.vessels ?? []).map((v) => ({ type: 'Feature', properties: { name: v.name ?? '' }, geometry: { type: 'Point', coordinates: [v.lon, v.lat] } })),
     });
     const ipp = search?.incident?.ipp;
+    const points = pointsOf(search);
     (m.getSource('ipp') as GeoJSONSource).setData({
       type: 'FeatureCollection',
-      features: ipp ? [{ type: 'Feature', properties: { label: ipp.label ?? '' }, geometry: { type: 'Point', coordinates: [ipp.lon, ipp.lat] } }] : [],
+      features: points.map((p) => ({ type: 'Feature', properties: { kind: p.kind, label: p.label ?? '' }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })),
     });
 
     // HTML labels (no glyph server needed on the kiosk)
@@ -149,7 +161,12 @@ export class OpsMap {
     };
     label(st.lon, st.lat, st.shortName, 'map-label-station', 16);
     if (inc?.lat !== undefined && inc?.lon !== undefined) label(inc.lon, inc.lat, 'INCIDENT', 'map-label-incident', 22);
-    if (ipp) label(ipp.lon, ipp.lat, ipp.label ? `IPP · ${ipp.label}` : 'IPP', 'map-label-ipp', 18);
+    for (const p of points) {
+      const short = POINT_KIND_SHORT[p.kind];
+      const text = p.kind === 'lkp' || p.kind === 'pls' ? (p.label ? `${short} · ${p.label}` : short) : p.kind === 'significant' ? `★ ${p.label ?? 'Significant place'}` : p.label ?? short;
+      label(p.lon, p.lat, text, p.kind === 'lkp' ? 'map-label-ipp' : `map-label-pt k-${p.kind}`, p.kind === 'lkp' ? 18 : 14);
+    }
+    void ipp;
     if (this.opts.rings !== false) {
       for (const km of s.map.ringsKm) {
         const north = ring(st.lat, st.lon, km, 4).geometry.coordinates[0][0];
@@ -172,7 +189,7 @@ export class OpsMap {
           const pts: [number, number][] = [];
           if (inc?.lat !== undefined && inc?.lon !== undefined) pts.push([inc.lon, inc.lat]);
           if (search?.incident) {
-            if (search.incident.ipp) pts.push([search.incident.ipp.lon, search.incident.ipp.lat]);
+            for (const p of pointsOf(search)) pts.push([p.lon, p.lat]);
             for (const f of Object.values(search.latest)) pts.push([f.lon, f.lat]);
             for (const t of search.targets) pts.push(...flat(t.geometry));
           }
@@ -299,6 +316,14 @@ export class OpsMap {
   resize(): void {
     this.map?.resize();
   }
+}
+
+/** All planning points; falls back to the single IPP for an older server (Pi mirror talking to a not-yet-upgraded host). */
+function pointsOf(search?: SearchSnapshot): PlanningPointRow[] {
+  const inc = search?.incident;
+  if (!inc) return [];
+  if (inc.points) return inc.points;
+  return inc.ipp ? [{ id: 0, incidentId: inc.id, kind: 'lkp', label: inc.ipp.label, lat: inc.ipp.lat, lon: inc.ipp.lon, setAt: inc.ipp.setAt }] : [];
 }
 
 function flat(g: { type: string; coordinates: unknown }): [number, number][] {
