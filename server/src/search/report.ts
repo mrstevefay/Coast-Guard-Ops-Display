@@ -1,4 +1,4 @@
-import { LPB, profileBySlug, ringRadiiKm } from '../../../shared/lpb/index.js';
+import { LPB, buildPlan, profileBySlug } from '../../../shared/lpb/index.js';
 import type { ConditionsSnapshot, IncidentReplay, ReplayEvent, ReplayFix, SearchIncident, Target, TargetGeometry, Team, TeamMembership } from '../../../shared/types.js';
 import type { AppConfig } from '../config.js';
 import { haversineKm } from '../util/units.js';
@@ -211,8 +211,9 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
     </table>`;
   const subject = r.subject && (r.subject.name || r.subject.age !== undefined || r.subject.sex) ? `<p><b>Subject:</b> ${esc(r.subject.name ?? 'not recorded')}${r.subject.sex ? `, ${esc(r.subject.sex)}` : ''}${r.subject.age !== undefined ? `, ${r.subject.age} yrs` : ''}. Further details are held on the ops server and are not reproduced here.</p>` : '';
   const profile = profileBySlug(r.subject?.category);
-  const behaviour = profile
-    ? `<p><b>Behaviour profile:</b> ${esc(profile.name)} (MISPER-UK, n=${profile.n}${profile.lowNumbersCaution ? ', low numbers' : ''})${r.subject?.terrain ? `, terrain ${esc(r.subject.terrain)}` : ''}. Found within ${ringRadiiKm(profile).map((x) => `${x.km} km (${x.pct} %)`).join(', ') || 'n/a'} of the planning point. ${esc(LPB.source.attribution)}</p>`
+  const plan = profile ? buildPlan({ category: profile.slug, terrain: r.subject?.terrain, sex: r.subject?.sex, age: r.subject?.age }) : undefined;
+  const behaviour = profile && plan
+    ? `<p><b>Behaviour profile:</b> ${esc(profile.name)} (MISPER-UK, n=${profile.n}${profile.lowNumbersCaution ? ', low numbers' : ''})${r.subject?.terrain ? `, terrain ${esc(r.subject.terrain)}` : ''}. Found within ${plan.rings.items.map((x) => `${x.km} km (${x.pct} %${x.interpolated ? ', interpolated' : ''})`).join(', ') || 'n/a'} of the planning point.${plan.studyDistance ? ` UK study 2011 (${esc(plan.studyDistance.basis.ref)}): ${plan.studyDistance.points.filter((x) => x.pct < 100).map((x) => `${x.km} km (${x.pct} %)`).join(', ')}.` : ''} ${esc(LPB.source.attribution)}</p>`
     : '';
   return `<!doctype html>
 <html lang="en-IE"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${esc(title)} — ${esc(station.name)}</title>

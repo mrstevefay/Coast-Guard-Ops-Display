@@ -1,6 +1,6 @@
 import '../components.css';
 import './sm.css';
-import { profileBySlug, ringRadiiKm } from '../../../shared/lpb/index';
+import { buildPlan } from '../../../shared/lpb/index';
 import type { Fix, IncidentSubject, Principal, Target, TargetGeometry, Team, UserPublic } from '../../../shared/types';
 import { get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
@@ -162,7 +162,7 @@ function render(): void {
   map.setTracks(cs.s.tracks, cs.s.search, 300);
   void ensureTracksLoaded();
   ensureSubjectLoaded();
-  map.setBehaviourRings(cs.s.search?.incident?.ipp, ringRadiiKm(profileBySlug(cs.s.subject?.category)));
+  map.setBehaviourRings(cs.s.search?.incident?.ipp, behaviourRings());
   renderTop();
   renderSidebar(document.getElementById('sm-side')!, {
     locate: (lon, lat, zoom) => map!.flyTo(lon, lat, zoom ?? 15),
@@ -177,6 +177,14 @@ function render(): void {
   renderLayers();
   renderStatus();
   if (cs.s.layers.follow && cs.s.search?.incident) map.fitAll(s, cs.s.search);
+}
+
+/** Distance rings for the map from the subject's behaviour plan (25/50/75/90 % where the data allows). */
+function behaviourRings(): { pct: number; km: number }[] {
+  const s = cs.s.subject;
+  if (!s?.category) return [];
+  const plan = buildPlan({ category: s.category, terrain: s.terrain, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown });
+  return plan?.rings.items.map((r) => ({ pct: r.pct, km: r.km })) ?? [];
 }
 
 /** Fetch the subject record when the incident or its `subjectUpdatedAt` changes (never in the WS snapshot). */

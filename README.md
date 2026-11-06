@@ -133,7 +133,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
 `PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
-`GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated);
+`GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated; `suicideThreatened`, `depression`, `significantPlaceKnown` feed the plan card);
 `GET /api/positions/latest`. WebSocket `/api/ws` carries `state`, `search`, `pos`, `auth`, `ping`.
 
 ```bash
@@ -276,12 +276,35 @@ node scripts/fetch-misper.mjs     # rewrites shared/lpb/misperUk.ts from the liv
 npm test                          # server/test/lpb.test.ts reconciles every category
 ```
 
-The site publishes cumulative deciles (10–100 %), so the rings are the 50, 70 and 90 %
-distances (`RING_PCTS` in `shared/lpb/index.ts`); the 100 % value is the furthest case and
-is never drawn. These are UK land-search figures: use them with the tide, drift and local
-knowledge panels, not instead of them. misper.uk states no reuse licence; the data is used
-here with attribution for operational planning, and permission from The Centre for Search
-Research (tcsr.org.uk) should be confirmed before wider distribution.
+The site publishes cumulative deciles (10–100 %). The plan card draws rings at 25, 50, 75
+and 90 % (`PLAN_RING_PCTS` in `shared/lpb/plan.ts`); 25 and 75 are interpolated between
+the deciles and marked as such, 95 % is never derived from deciles (the 90–100 % gap is
+tens or hundreds of km) and the 100 % value is never drawn. Rings at 0 km are skipped and
+the card warns when a large share of a category is recorded at the planning point.
+
+Two further sources, both transcribed by hand with checks in `server/test/lpb2011.test.ts`:
+
+- `shared/lpb/ukmpbs2011.ts`: the UK Missing Person Behaviour Study, August 2011
+  (Perkins, Roberts & Feeney; n=1271). It splits distance, outcome and location by terrain
+  and sex, gives the location detail level (road vs path, habitation vs shelter), the
+  despondent characteristic modifiers (Table 16 and section c) and each category's
+  "possible scenarios". Every table is cited by number on the card; a few printed figures
+  that do not add up are kept as printed and listed in the test.
+- `shared/lpb/isridAsd.ts`: Koester (2020), Journal of Search & Rescue 4(1), the one
+  open-access ISRID paper: autism spectrum disorder (children and adults) and typically
+  developing children, by ecoregion (Ireland = temperate), with 25/50/75/95 % distance,
+  track offset, mobility, find location, outcome and survival-over-days. The rest of ISRID
+  (Koester, *Lost Person Behavior*, 2008) is not reproduced: it is not openly licensed.
+
+`shared/lpb/plan.ts` `buildPlan()` picks the most specific 2011 segment for the subject
+(category + terrain + sex → category + terrain → category + sex → category) and reports
+the level and n it used; `shared/lpb/tactics.ts` holds the reflex tasks with the statistic
+behind each one. These are UK and international land-search figures: use them with the
+tide, drift and local knowledge panels, not instead of them, and only as a trained search
+manager (misper.uk's own condition of use). misper.uk and the 2011 study state no reuse
+licence; the data is used here with attribution for operational planning, and permission
+from The Centre for Search Research (tcsr.org.uk) should be confirmed before wider
+distribution.
 
 ## Conventions
 

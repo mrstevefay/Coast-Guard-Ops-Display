@@ -111,6 +111,7 @@ describe('subject category and terrain over the API', () => {
     await t.app.inject({ method: 'PUT', url: `/api/incidents/${id}/subject`, headers: { cookie: manager }, payload: { category: 'despondent', terrain: 'Water Margin' } });
     const html = (await t.app.inject({ method: 'GET', url: `/api/incidents/${id}/report.html`, headers: { cookie: manager } })).body;
     expect(html).toContain('Behaviour profile:</b> Despondent (MISPER-UK, n=1731), terrain Water Margin');
-    expect(html).toContain('0.3 km (50 %), 1 km (70 %), 5.5 km (90 %)');
+    expect(html).toContain('0.3 km (50 %), 1.5 km (75 %, interpolated), 5.5 km (90 %)');
+    expect(html).toContain('UK study 2011 (Table 20 all searches)');
   });
 });

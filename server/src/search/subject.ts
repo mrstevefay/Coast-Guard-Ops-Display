@@ -7,11 +7,11 @@ import { now, type Db } from '../db/index.js';
 interface SubjectRow {
   incident_id: string; name: string | null; sex: string | null; age: number | null; clothing: string | null; description: string | null;
   locations: string | null; history: string | null; despondent: number; mental_health: number; self_harm: number; self_harm_means: string | null;
-  category: string | null; terrain: string | null;
+  category: string | null; terrain: string | null; suicide_threatened: number; depression: number; significant_place: number;
   photo_mime: string | null; photo_updated_at: string | null; updated_at: string; updated_by: number | null;
 }
 
-export type SubjectPatch = Partial<Pick<IncidentSubject, 'name' | 'sex' | 'age' | 'clothing' | 'description' | 'locations' | 'history' | 'despondent' | 'mentalHealth' | 'selfHarmHistory' | 'selfHarmMeans' | 'category' | 'terrain'>>;
+export type SubjectPatch = Partial<Pick<IncidentSubject, 'name' | 'sex' | 'age' | 'clothing' | 'description' | 'locations' | 'history' | 'despondent' | 'mentalHealth' | 'selfHarmHistory' | 'selfHarmMeans' | 'category' | 'terrain' | 'suicideThreatened' | 'depression' | 'significantPlaceKnown'>>;
 
 const PHOTO_MIMES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 export const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
@@ -62,14 +62,16 @@ export class Subjects {
     }
     const t = now();
     this.db.run(
-      `INSERT INTO incident_subjects (incident_id, name, sex, age, clothing, description, locations, history, despondent, mental_health, self_harm, self_harm_means, category, terrain, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO incident_subjects (incident_id, name, sex, age, clothing, description, locations, history, despondent, mental_health, self_harm, self_harm_means, category, terrain, suicide_threatened, depression, significant_place, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(incident_id) DO UPDATE SET name = excluded.name, sex = excluded.sex, age = excluded.age, clothing = excluded.clothing, description = excluded.description,
          locations = excluded.locations, history = excluded.history, despondent = excluded.despondent, mental_health = excluded.mental_health, self_harm = excluded.self_harm,
-         self_harm_means = excluded.self_harm_means, category = excluded.category, terrain = excluded.terrain, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+         self_harm_means = excluded.self_harm_means, category = excluded.category, terrain = excluded.terrain,
+         suicide_threatened = excluded.suicide_threatened, depression = excluded.depression, significant_place = excluded.significant_place, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
       incidentId, text(patch.name, cur?.name ?? null), sex, age, text(patch.clothing, cur?.clothing ?? null), text(patch.description, cur?.description ?? null),
       text(patch.locations, cur?.locations ?? null), text(patch.history, cur?.history ?? null), flag(patch.despondent, cur?.despondent ?? 0), flag(patch.mentalHealth, cur?.mental_health ?? 0),
-      flag(patch.selfHarmHistory, cur?.self_harm ?? 0), text(patch.selfHarmMeans, cur?.self_harm_means ?? null), category, terrain, t, by ?? null,
+      flag(patch.selfHarmHistory, cur?.self_harm ?? 0), text(patch.selfHarmMeans, cur?.self_harm_means ?? null), category, terrain,
+      flag(patch.suicideThreatened, cur?.suicide_threatened ?? 0), flag(patch.depression, cur?.depression ?? 0), flag(patch.significantPlaceKnown, cur?.significant_place ?? 0), t, by ?? null,
     );
     return this.get(incidentId)!;
   }
@@ -128,6 +130,9 @@ function toSubject(r: SubjectRow): IncidentSubject {
     selfHarmMeans: r.self_harm_means ?? undefined,
     category: r.category ?? undefined,
     terrain: r.terrain ?? undefined,
+    suicideThreatened: Boolean(r.suicide_threatened),
+    depression: Boolean(r.depression),
+    significantPlaceKnown: Boolean(r.significant_place),
     hasPhoto: Boolean(r.photo_mime),
     photoUpdatedAt: r.photo_updated_at ?? undefined,
     updatedAt: r.updated_at,

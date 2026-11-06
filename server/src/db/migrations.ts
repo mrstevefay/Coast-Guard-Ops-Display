@@ -200,4 +200,10 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE incident_subjects ADD COLUMN category TEXT;
   ALTER TABLE incident_subjects ADD COLUMN terrain TEXT;
   `,
+  // 5 — despondent characteristics on the subject (UKMPBS 2011 Table 16 factors)
+  `
+  ALTER TABLE incident_subjects ADD COLUMN suicide_threatened INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE incident_subjects ADD COLUMN depression INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE incident_subjects ADD COLUMN significant_place INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

@@ -223,5 +223,17 @@ select, input[type='text'], input:not([type]), textarea { background: var(--bg);
 .lpb-tactics { margin: 4px 0; padding-left: 18px; font-size: 12px; }
 .lpb-src { padding: 6px 8px; border-top: 1px solid var(--line); margin: 6px 0 0; }
 .lpb-hint { margin: 0; }
-.subject-form .lpb-pick { grid-template-columns: 1fr 1fr; }
+.subject-form .lpb-pick { grid-template-columns: 1fr 1fr; } .subject-form .lpb-pick select { min-width: 0; width: 100%; }
+.subject-form .desp-flags { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--line); } .subject-form .desp-flags p { margin: 0; }
 .map-label-behaviour { font-size: calc(18 * var(--u)); color: var(--amber); }
+.lpb .src { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; text-transform: none; }
+.lpb .src.live { color: var(--amber); border-color: var(--amber); } .lpb .src.study { color: var(--blue); border-color: var(--blue); } .lpb .src.isrid { color: var(--green); border-color: var(--green); }
+.lpb-factors label { display: inline; } .lpb-factors select.inline { font-size: 12px; } .lpb-factors option.nodata { color: var(--muted); }
+.lpb p.small { margin: 2px 0; }
+.lpb-tactics { margin: 4px 0; padding-left: 0; list-style: none; font-size: 12px; } .lpb-tactics li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.lpb-tactics .pri { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 8px; font-size: 10px; font-weight: 800; margin-right: 6px; background: var(--panel-2); color: var(--muted); }
+.lpb-tactics .pri.p1 { background: var(--amber); color: #111; }
+.lpb-tactics .why { display: block; color: var(--muted); font-size: 11px; margin-left: 22px; }
+.lpb-scen, .lpb-warn { margin: 2px 0; padding-left: 18px; } .lpb-warn li { color: var(--amber); }
+.lpb-mod ul { margin: 0; padding-left: 18px; }
+.lpb-data summary { cursor: pointer; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; }

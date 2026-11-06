@@ -395,6 +395,12 @@ export interface IncidentSubject {
   selfHarmHistory: boolean;
   /** Previous means of self-harm, if selfHarmHistory. */
   selfHarmMeans?: string;
+  /** Despondent characteristics (UKMPBS 2011): an explicit suicide threat was made. */
+  suicideThreatened: boolean;
+  /** Depression diagnosed or suspected. */
+  depression: boolean;
+  /** A place significant to them is known (beauty spot, memories, regular walk): see `locations`. */
+  significantPlaceKnown: boolean;
   /** Lost person behaviour category: a MISPER-UK profile slug (e.g. "dementia"), see shared/lpb. */
   category?: string;
   /** Terrain the subject went missing in (MISPER-UK terrain name), narrows the where-found statistics. */

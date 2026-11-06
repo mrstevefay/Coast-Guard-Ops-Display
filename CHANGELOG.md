@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Search plan card** (console → *Behaviour* tab): enter what is known about the subject
+  (category, terrain, sex, age, and for despondents: threat made, previous attempts,
+  depression, significant place known) and get a plan: distance rings at 25 / 50 / 75 / 90 %
+  (interpolated points marked), where people in that category and terrain are found,
+  condition with the 2011 study's terrain/sex outcome and the male-despondent fatality
+  modifiers, the study's likely scenarios, ranked reflex tasks each with its evidence, and
+  warnings (small samples, zero-distance records, dark, cold, active marine warnings). Every
+  figure carries a source tag: LIVE (MISPER-UK), 2011 (UK Missing Person Behaviour Study
+  table) or ISRID (Koester 2020 autism paper, used for Developmental Problems / Other
+  Vulnerable and as a comparator for children). `shared/lpb/ukmpbs2011.ts`,
+  `isridAsd.ts`, `tactics.ts`, `plan.ts`; schema migration 5 (three subject flags); the
+  end-of-mission report quotes the rings and the 2011 segment.
 - **Lost person behaviour reference** (console → *Behaviour* tab, Subject form): the 15
   MISPER-UK subject categories (dementia, despondent, children 1–16, walker solo/group,
   water-related…) with distance-from-planning-point percentiles, where-found by terrain,
