@@ -1,6 +1,6 @@
-import maplibregl, { type GeoJSONSource } from 'maplibre-gl';
+import maplibregl, { type GeoJSONSource, type ImageSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { POINT_KIND_SHORT, type DashboardState, type Fix, type PlanningPointRow, type SearchSnapshot } from '../../shared/types';
+import { POINT_KIND_SHORT, type DashboardState, type Fix, type PlanningPointRow, type SearchAreaResult, type SearchSnapshot } from '../../shared/types';
 import { addSearchLayers, emptyFC, setSearchData, tracksFC, type SEARCH_LAYER_IDS } from './search/layers';
 
 /** Great-circle ring polygon around a point, radius in km. */
@@ -45,6 +45,8 @@ export class OpsMap {
   private behaviourMarkers: maplibregl.Marker[] = [];
   private behaviourFeatures: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
   private behaviourOn = true;
+  private segmentMarkers: maplibregl.Marker[] = [];
+  private terrainOn = true;
   private fitted = false;
   private byUser = new Map<number, Fix[]>();
   private stationLat = 53.388;
@@ -62,6 +64,9 @@ export class OpsMap {
       incident: { type: 'geojson', data: emptyFC() },
       ipp: { type: 'geojson', data: emptyFC() },
       behaviour: { type: 'geojson', data: emptyFC() },
+      'search-area': { type: 'geojson', data: emptyFC() },
+      segments: { type: 'geojson', data: emptyFC() },
+      corridors: { type: 'geojson', data: emptyFC() },
       ais: { type: 'geojson', data: emptyFC() },
     };
     const layers: maplibregl.LayerSpecification[] = [
@@ -83,6 +88,11 @@ export class OpsMap {
       { id: 'station-dot', type: 'circle', source: 'station', paint: { 'circle-radius': 11, 'circle-color': '#2dd4bf', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } },
       { id: 'incident-halo', type: 'circle', source: 'incident', paint: { 'circle-radius': 34, 'circle-color': '#ef4444', 'circle-opacity': 0.3 } },
       { id: 'incident-dot', type: 'circle', source: 'incident', paint: { 'circle-radius': 15, 'circle-color': '#ef4444', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 4 } },
+      // Terrain-shaped search areas (console only): nested regions, so the inner ones read darker.
+      { id: 'area-fill', type: 'fill', source: 'search-area', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.09 } },
+      { id: 'area-line', type: 'line', source: 'search-area', paint: { 'line-color': '#fbbf24', 'line-width': ['match', ['get', 'pct'], 50, 2.5, 2], 'line-opacity': 0.95 } },
+      { id: 'segment-line', type: 'line', source: 'segments', paint: { 'line-color': '#ffffff', 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.85 } },
+      { id: 'corridor-line', type: 'line', source: 'corridors', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#f472b6', 'line-width': 3, 'line-dasharray': [1, 1.5], 'line-opacity': 0.95 } },
       // Lost person behaviour rings (console only): % of subjects found within this distance of the IPP.
       { id: 'behaviour-fill', type: 'fill', source: 'behaviour', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.05 } },
       { id: 'behaviour-line', type: 'line', source: 'behaviour', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [4, 2], 'line-opacity': 0.9 } },
@@ -118,6 +128,7 @@ export class OpsMap {
       if (this.opts.search) addSearchLayers(this.map!, 'station-halo');
       this.ready = true;
       if (this.pending) this.update(this.pending.s, this.pending.search, true);
+      if (this.pendingArea) this.setSearchArea(this.pendingArea.area);
     });
     this.pending = { s };
   }
@@ -255,9 +266,55 @@ export class OpsMap {
     }
   }
 
+  private lastHeatUrl = '';
+  /** Terrain-shaped regions, probability heat, ranked segments and corridors. Pass undefined to clear. */
+  setSearchArea(area: Pick<SearchAreaResult, 'regions' | 'heat' | 'segments' | 'corridors'> | undefined): void {
+    this.pendingArea = { area };
+    const m = this.map;
+    if (!m || !this.ready) return; // applied from the load handler
+    this.pendingArea = undefined;
+    this.shownArea = area;
+    (m.getSource('search-area') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: (area?.regions ?? []).slice().sort((a, b) => b.km - a.km).map((r) => ({ type: 'Feature', properties: { pct: r.pct, km: r.km }, geometry: r.geometry })) });
+    (m.getSource('segments') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: (area?.segments ?? []).map((s) => ({ type: 'Feature', properties: { id: s.id, poa: s.poaPct }, geometry: s.geometry })) });
+    (m.getSource('corridors') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: (area?.corridors ?? []).map((c) => ({ type: 'Feature', properties: { label: c.label }, geometry: c.geometry })) });
+    // heat: an image source, added on first use under the region outlines
+    const heat = area?.heat;
+    if (!heat) {
+      if (m.getLayer('heat')) m.removeLayer('heat');
+      if (m.getSource('heat')) m.removeSource('heat');
+      this.lastHeatUrl = '';
+    } else if (heat.url !== this.lastHeatUrl) {
+      const src = m.getSource('heat') as ImageSource | undefined;
+      if (src) src.updateImage({ url: heat.url, coordinates: heat.coordinates });
+      else {
+        m.addSource('heat', { type: 'image', url: heat.url, coordinates: heat.coordinates });
+        m.addLayer({ id: 'heat', type: 'raster', source: 'heat', paint: { 'raster-opacity': 0.8, 'raster-fade-duration': 0 }, layout: { visibility: this.heatOn ? 'visible' : 'none' } }, 'area-fill');
+      }
+      this.lastHeatUrl = heat.url;
+    }
+    for (const mk of this.segmentMarkers) mk.remove();
+    this.segmentMarkers = [];
+    for (const s of area?.segments ?? []) {
+      const ring = s.targetRing.length ? s.targetRing : s.geometry.coordinates[0]?.[0] ?? [];
+      if (!ring.length) continue;
+      const lon = ring.reduce((a, p) => a + p[0], 0) / ring.length, lat = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+      const el = document.createElement('div');
+      el.className = 'map-label map-label-seg';
+      el.textContent = `${s.id} · ${s.poaPct} %`;
+      el.style.display = this.terrainOn ? '' : 'none';
+      this.segmentMarkers.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lon, lat]).addTo(m));
+    }
+  }
+  private heatOn = true;
+  private shownArea?: Pick<SearchAreaResult, 'regions' | 'heat' | 'segments' | 'corridors'>;
+  private pendingArea?: { area: Pick<SearchAreaResult, 'regions' | 'heat' | 'segments' | 'corridors'> | undefined };
+
   /** Zoom to the behaviour rings (no-op when none are drawn). */
   fitBehaviourRings(): void {
-    const pts = this.behaviourFeatures.flatMap((f) => flat(f.geometry));
+    // prefer the terrain area (the circle is often mostly sea); else the rings
+    const area = this.shownArea?.regions ?? [];
+    const outer = area.length ? area.reduce((a, b) => (b.km > a.km ? b : a)) : undefined;
+    const pts = outer ? outer.geometry.coordinates.flatMap((poly) => poly[0] as [number, number][]) : this.behaviourFeatures.flatMap((f) => flat(f.geometry));
     if (!pts.length || !this.map) return;
     const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
     for (const p of pts) b.extend(p);
@@ -287,7 +344,12 @@ export class OpsMap {
     (this.map.getSource('coverage') as GeoJSONSource | undefined)?.setData(coverage);
   }
 
-  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels' | 'topo' | 'behaviour-fill' | 'behaviour-line', on: boolean): void {
+  setLayerVisible(id: SearchLayerId | 'ais-dot' | 'rings-line' | 'labels' | 'topo' | 'behaviour-fill' | 'behaviour-line' | 'area-fill' | 'area-line' | 'segment-line' | 'corridor-line' | 'heat', on: boolean): void {
+    if (id === 'heat') this.heatOn = on;
+    if (id === 'segment-line') {
+      this.terrainOn = on;
+      for (const mk of this.segmentMarkers) mk.getElement().style.display = on ? '' : 'none';
+    }
     if (id === 'behaviour-line') {
       this.behaviourOn = on;
       for (const mk of this.behaviourMarkers) mk.getElement().style.display = on ? '' : 'none';

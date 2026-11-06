@@ -1,5 +1,5 @@
 import { LPB, LPB_GROUPS, LPB_TERRAINS, buildPlan, outcomeShares, profileBySlug, suggestProfile, terrainsWithData, type Basis, type PlanRing, type SearchPlan, type Tactic } from '../../../shared/lpb/index';
-import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
+import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type SearchAreaResult, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
 import { del, get, patch, post, put } from '../api';
 import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
@@ -48,7 +48,8 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   delete root.dataset.subjectKey;
   // The behaviour tab has its own terrain selector: keep it across position ticks too.
   if (cs.s.tab === 'behaviour' && search?.incident) {
-    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}:${significantPoints().map((p) => p.id).join(',')}`;
+    const sa = cs.s.searchArea;
+    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}:${significantPoints().map((p) => p.id).join(',')}:${sa?.key ?? ''}:${sa?.loading ? 'l' : sa?.area ? 'a' : sa?.error ? 'e' : ''}`;
     if (root.dataset.behaviourKey === key && root.querySelector('#behaviour-body')) {
       root.querySelector('.tabs-sm')!.innerHTML = tabs;
       wireTabs(root);
@@ -349,6 +350,31 @@ function behaviourTab(el: HTMLElement, subject: IncidentSubject | null | undefin
   renderPlan(el, subject!, hasIpp, attribution, a, subject!.terrain ?? '');
 }
 
+/** The terrain-shaped area lines under the rings: how much of each circle the ground allows. */
+function terrainBlock(): string {
+  const sa = cs.s.searchArea;
+  if (!sa) return '';
+  if (sa.loading) return '<p class="small muted">Terrain area: modelling the ground around the point…</p>';
+  if (sa.error) return `<p class="small ${sa.status === 503 ? 'muted' : 'amber'}">Terrain area: ${esc(sa.error)}</p>`;
+  const a = sa.area!;
+  if (!a.regions.length) return '<p class="small muted">Terrain area: nothing to draw for this category (half or more are found at the point itself).</p>';
+  const cov = a.coverage.lidarPct ? `${a.coverage.lidarPct} % LiDAR, ${a.coverage.copernicusPct} % satellite heights` : `${a.coverage.copernicusPct} % satellite heights`;
+  return `<div class="lpb-terrain"><p class="small"><b>Terrain areas</b> <span class="src terrain" title="Cost-distance over heights, land cover, coast, cliffs, paths">MODEL ${a.cellM} m</span> (solid shapes on the map): ${a.regions.map((r) => `<b>${r.pct} %</b> ${r.areaKm2 < 1 ? `${Math.round(r.areaKm2 * 100)} ha` : `${r.areaKm2.toFixed(1)} km²`} <span class="muted">(${Math.round(r.ratio * 100)} % of the circle)</span>`).join(', ')}.</p>
+    <p class="small muted">The rest of each circle is sea, water, cliff or ground too steep or rough to reach in that distance. ${esc(cov)}; computed in ${(a.computedMs / 1000).toFixed(1)} s.</p>
+    ${(a.corridors ?? []).map((c) => `<p class="small"><span class="corr-key"></span><b>Route to ${esc(c.label)}</b>: ${c.effortKm} km of walking effort for ${c.straightKm} km straight-line; the route and the place are weighted up.</p>`).join('')}
+    ${segmentsTable(a)}</div>`;
+}
+
+function segmentsTable(a: SearchAreaResult): string {
+  const segs = a.segments ?? [];
+  if (!segs.length) return '';
+  return `<h4>Search segments <span class="src terrain" title="Probability of area from the distance bands, where this category is found, and corridors to significant places">POA</span></h4>
+    <p class="small muted">${a.modelledPct ?? ''} % of subjects in this category fall inside the outer area; these are its most likely pieces, highest first. Heat on the map shows the same thing cell by cell.${a.atPointPct ? ` ${a.atPointPct} % are recorded at the point itself, so the segment holding the planning point carries that share: search it first and thoroughly.` : ''}</p>
+    <table class="lpb-table seg-table"><thead><tr><th></th><th class="num">POA</th><th class="num">Area</th><th>Ground</th><th></th></tr></thead><tbody>
+    ${segs.map((s) => `<tr><td><b>${esc(s.id)}</b></td><td class="num">${s.poaPct} %</td><td class="num">${s.areaKm2 < 1 ? `${Math.round(s.areaKm2 * 100)} ha` : `${s.areaKm2.toFixed(1)} km²`}</td><td class="small">${esc(s.dominant)} · ${esc(s.band)}</td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show">◎</button><button class="mini" data-seg-target="${esc(s.id)}" title="Make this an area target">Target</button></td></tr>`).join('')}
+    </tbody></table>`;
+}
+
 function tacticList(items: Tactic[]): string {
   return `<ul class="lpb-tactics">${items.map((t) => `<li><span class="pri p${t.priority}">${t.priority}</span>${esc(t.task)} <span class="why" title="${esc(t.evidence.source)} · ${esc(t.evidence.ref)}">${esc(t.evidence.stat)}</span></li>`).join('')}</ul>`;
 }
@@ -378,6 +404,7 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
       <h4>Rings ${srcTag(plan.rings.basis)}</h4>
       ${plan.rings.items.length ? `<p class="small">${plan.rings.items.map(ringText).join(', ')}.${hasIpp ? ' <button type="button" class="mini" id="lpb-fit">Show on map</button>' : ''}</p>` : '<p class="small">Half or more of this category are recorded at the planning point itself; no ring is drawn below the first non-zero distance.</p>'}
       ${hasIpp ? '' : '<p class="small amber">Set the last known position (Responders tab, Points) to draw the rings on the map.</p>'}
+      ${hasIpp ? terrainBlock() : ''}
       ${plan.studyDistance ? `<p class="small">2011 study, ${esc(plan.studyDistance.basis.ref.replace(/^Table \d+ /, ''))} ${srcTag(plan.studyDistance.basis)}: ${plan.studyDistance.points.filter((x) => x.pct < 100).map((x) => `<b>${x.pct} %</b> ${km(x.km)}`).join(', ')}; furthest ${km(plan.studyDistance.points[plan.studyDistance.points.length - 1].km)}.${plan.studyDistance.stepPct > 10 ? ` <span class="muted">(${plan.studyDistance.stepPct} % steps: fewer cases)</span>` : ''}</p>` : ''}
       ${plan.rawDistancesKm ? `<p class="small">2011 study, every case ${srcTag(plan.rawDistancesKm.basis)}: ${plan.rawDistancesKm.km.map(km).join(', ')}.</p>` : ''}
       ${plan.isrid ? `<p class="small">ISRID ${esc(plan.isrid.group.name)}, ${esc(plan.isrid.ecoregion.toLowerCase())} ${srcTag(plan.isrid.basis)}: ${isridRings}.</p>` : ''}
@@ -400,7 +427,7 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
       ${immediateBlock(plan)}
 
       <h4>Warnings</h4>
-      <ul class="lpb-warn small">${plan.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
+      <ul class="lpb-warn small">${[...plan.warnings, ...(cs.s.searchArea?.area?.warnings ?? [])].map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
 
       <details class="lpb-data"><summary>Data: live percentiles and outcome</summary>
         <table class="lpb-table"><tbody>${profile.distanceKm.map((d) => `<tr class="${d.pct === 100 ? 'muted' : ''}"><td>${d.pct} %</td><td>found within</td><td class="num">${km(d.km)}</td><td class="muted small">${d.pct === 100 ? 'furthest case, not drawn' : ''}</td></tr>`).join('')}</tbody></table>
@@ -412,6 +439,33 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
     </div>${attribution}`;
   el.querySelector<HTMLSelectElement>('#lpb-terrain')!.addEventListener('change', (ev) => renderPlan(el, s, hasIpp, attribution, a, (ev.target as HTMLSelectElement).value));
   el.querySelector('#lpb-fit')?.addEventListener('click', () => a.fitRings());
+  const area = cs.s.searchArea?.area;
+  const segById = (id: string) => area?.segments?.find((x) => x.id === id);
+  el.querySelectorAll<HTMLButtonElement>('[data-seg-locate]').forEach((b) => b.addEventListener('click', () => {
+    const seg = segById(b.dataset.segLocate!);
+    const ring = seg?.targetRing ?? [];
+    if (!ring.length) return;
+    a.locate(ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length, 16);
+  }));
+  el.querySelectorAll<HTMLButtonElement>('[data-seg-target]').forEach((b) => b.addEventListener('click', async () => {
+    const seg = segById(b.dataset.segTarget!);
+    const incId = cs.s.search?.incident?.id;
+    if (!seg || !incId || seg.targetRing.length < 4) return;
+    try {
+      await post(`/api/incidents/${incId}/targets`, {
+        name: `${seg.id} ${seg.dominant}`.slice(0, 60),
+        kind: 'area',
+        geometry: { type: 'Polygon', coordinates: [seg.targetRing] },
+        priority: seg.rank <= 3 ? 1 : seg.rank <= 6 ? 2 : 3,
+        notes: `Terrain model: POA ${seg.poaPct} % (${seg.densityPerKm2} %/km²), ${seg.band}, ${seg.areaKm2 < 1 ? `${Math.round(seg.areaKm2 * 100)} ha` : `${seg.areaKm2.toFixed(1)} km²`}, mostly ${seg.dominant.toLowerCase()}.`,
+      });
+      toast(`${seg.id} added as a target`);
+      b.disabled = true;
+      b.textContent = 'Added';
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'failed', true);
+    }
+  }));
 }
 
 /** Downscale on the client so phone photos stay small (JPEG, longest side `max` px). */

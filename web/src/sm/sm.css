@@ -249,3 +249,8 @@ select, input[type='text'], input:not([type]), textarea { background: var(--bg);
 .pt-row.k-lkp .pt-kind { background: var(--yellow); } .pt-row.k-pls .pt-kind { background: #fb923c; } .pt-row.k-significant .pt-kind { background: #f472b6; } .pt-row.k-vehicle .pt-kind { background: #60a5fa; }
 .map-label-pt { color: #111; background: #cbd5e1; padding: 1px 5px; border-radius: 4px; text-shadow: none; font-size: 12px; }
 .map-label-pt.k-pls { background: #fb923c; } .map-label-pt.k-significant { background: #f472b6; } .map-label-pt.k-vehicle { background: #60a5fa; } .map-label-pt.k-home { background: #94a3b8; }
+.lpb .src.terrain { color: #fbbf24; border-color: #fbbf24; }
+.lpb-terrain { border-left: 3px solid #fbbf24; padding-left: 6px; margin: 4px 0; }
+.map-label-seg { color: #111; background: rgba(255,255,255,0.9); padding: 0 5px; border-radius: 4px; text-shadow: none; font-size: 11px; font-weight: 800; }
+.seg-table td, .seg-table th { padding: 3px 4px; } .seg-table .nowrap { white-space: nowrap; }
+.corr-key { display: inline-block; width: 16px; height: 0; border-top: 3px dotted #f472b6; vertical-align: middle; margin-right: 6px; }

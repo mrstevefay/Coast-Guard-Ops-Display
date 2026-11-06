@@ -372,6 +372,75 @@ export const PRIVATE_POINT_KINDS: PlanningPointKind[] = ['home', 'significant'];
 export const POINT_KIND_LABEL: Record<PlanningPointKind, string> = { lkp: 'Last known position', pls: 'Place last seen', home: 'Home', vehicle: 'Vehicle', significant: 'Significant place', other: 'Other' };
 export const POINT_KIND_SHORT: Record<PlanningPointKind, string> = { lkp: 'LKP', pls: 'PLS', home: 'HOME', vehicle: 'VEH', significant: '★', other: 'PT' };
 
+/** One terrain-shaped region: the ground reachable within the ring's distance of the planning point. */
+export interface SearchAreaRegion {
+  pct: number;
+  /** Statistical (straight-line) distance this region is drawn for. */
+  km: number;
+  areaKm2: number;
+  /** Area of the statistical circle, for comparison. */
+  circleKm2: number;
+  /** areaKm2 / circleKm2: how much of the circle the ground actually allows. */
+  ratio: number;
+  interpolated: boolean;
+  /** Grid this region was modelled on, metres. */
+  cellM: number;
+  geometry: GeoJSON.MultiPolygon;
+}
+
+export interface SearchAreaResult {
+  point: { lat: number; lon: number; kind: PlanningPointKind | 'ipp' };
+  regions: SearchAreaRegion[];
+  /** Finest cost-grid cell size used, metres (rings beyond about 6 km use a coarser grid; see each region). */
+  cellM: number;
+  /** Height source for the land cells inside the largest region. */
+  coverage: { lidarPct: number; copernicusPct: number; nonePct: number };
+  /** Where the planning point sat on an impassable cell (sea, cliff), how far it was moved. */
+  startMovedM?: number;
+  warnings: string[];
+  computedMs: number;
+  builtAt: string;
+  /** Probability heat overlay (PNG) over the outer region: quad corners TL, TR, BR, BL as [lon, lat]. */
+  heat?: { url: string; coordinates: [[number, number], [number, number], [number, number], [number, number]] };
+  /** Ranked search segments inside the outer region, highest probability first. */
+  segments?: SearchSegment[];
+  /** Least-cost routes from the planning point to places significant to the subject. */
+  corridors?: { label: string; geometry: GeoJSON.LineString; effortKm: number; straightKm: number }[];
+  /** Share of subjects the heat and segments account for (the outer ring's percentage). */
+  modelledPct?: number;
+  /** Share the category records at the point itself (0 km); it sits in the first 60 m, so in the top segment. */
+  atPointPct?: number;
+}
+
+export interface SearchSegment {
+  id: string;
+  rank: number;
+  /** Probability of area: % of subjects in this category expected here. */
+  poaPct: number;
+  areaKm2: number;
+  /** poaPct per km², the order teams should take segments in. */
+  densityPerKm2: number;
+  /** Main find-location type of the ground in the segment. */
+  dominant: string;
+  /** Which ring band the segment mostly sits in, e.g. "inside 50 %". */
+  band: string;
+  geometry: GeoJSON.MultiPolygon;
+  /** Simplified outer ring, ready to become an area target. */
+  targetRing: [number, number][];
+}
+
+export interface TerrainStatus {
+  built: boolean;
+  builtAt?: string;
+  bbox?: [number, number, number, number];
+  cellM?: number;
+  size?: { cols: number; rows: number };
+  coverage?: { lidarPct: number; copernicusPct: number; nonePct: number; seaPct: number };
+  sources?: { lidarTiles: number; copernicusTiles: string[]; osmTiles: number; overpass?: string };
+  attribution?: string[];
+  job?: { running: boolean; stage: string; pct: number; message: string; startedAt: string; finishedAt?: string; error?: string; log: string[] };
+}
+
 export interface PlanningPointRow {
   id: number;
   incidentId: string;

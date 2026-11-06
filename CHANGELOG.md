@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Typed planning points** (console → Responders → Points): last known position, place
+  last seen, home, vehicle, places significant to the subject, other. The LKP (else the PLS)
+  is the planning point everything is drawn from; the old single IPP becomes each
+  incident's LKP (schema migration 6). Home and significant places never reach display
+  keys. `GET/POST /api/incidents/:id/points`, `PATCH/DELETE /api/points/:id`.
+- **Terrain-shaped search areas** (console map, Behaviour tab): each distance ring is
+  reshaped to the ground as a walking-effort (cost-distance) region from the planning
+  point: sea, inland water, cliffs, rivers, railways and motorways (except at crossings),
+  slopes over 35° and rough cover take reach away; roads, paths and piers keep it. Built
+  once per station from open data (Copernicus GLO-30, GSI/OPW and TII 2 m LiDAR,
+  OpenStreetMap) under Settings → Terrain or `npm run terrain:build`; Dublin city centre to
+  Skerries by default. `GET /api/incidents/:id/search-area`, `GET /api/admin/terrain`,
+  `POST /api/admin/terrain/build`. OpenStreetMap comes from Overpass, falling back to the
+  Ireland PBF extract when Overpass is down (a small built-in PBF reader, no native deps).
+- **Probability of area and search segments**: inside the terrain area each cell is weighted
+  by the category's distance bands, where it is found (paths, trees, water's edge,
+  buildings, open ground) and least-cost corridors to marked significant places; shown as a
+  heat overlay and up to 12 ranked segments (POA %, area, ground), each one click from an
+  area target with its POA in the notes.
 - **Search plan card** (console → *Behaviour* tab): enter what is known about the subject
   (category, terrain, sex, age, and for despondents: threat made, previous attempts,
   depression, significant place known) and get a plan: distance rings at 25 / 50 / 75 / 90 %

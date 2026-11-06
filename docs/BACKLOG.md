@@ -19,6 +19,11 @@ panel shows who is on-island before anyone presses *I'm responding*.
 
 ## 4. Terrain data the system can read
 
+**Partly done:** `server/src/terrain/` builds a 10 m height, land-class and barrier grid from
+Copernicus, GSI/OPW/TII LiDAR and OSM, and the console draws terrain-shaped search areas
+from it. Still open: hillshade / 3D from the same heights, viewsheds from the planning point,
+slope along targets, distance-over-ground.
+
 The console now has an OpenTopoMap raster toggle (contours and relief to look at). The next
 step is elevation data the server can query: a DEM for the Howth / north Dublin coast
 (Copernicus GLO-30 or EU-DEM 25 m, or OSi data if licensed), served as terrain-RGB tiles for

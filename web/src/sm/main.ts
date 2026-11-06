@@ -1,8 +1,8 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import { POINT_KIND_LABEL, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
-import { get, patch, post, setUnauthorisedHandler } from '../api';
+import { POINT_KIND_LABEL, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
+import { ApiError, get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
 import { renderLogin } from '../m/pages/login';
@@ -163,6 +163,9 @@ function render(): void {
   void ensureTracksLoaded();
   ensureSubjectLoaded();
   map.setBehaviourRings(cs.s.search?.incident?.ipp, behaviourRings());
+  ensureSearchArea();
+  const areaNow = cs.s.searchArea?.key === searchAreaKey() ? cs.s.searchArea?.area : undefined;
+  if (areaNow !== shownArea) { map.setSearchArea(areaNow); shownArea = areaNow; applyLayers(); }
   renderTop();
   renderSidebar(document.getElementById('sm-side')!, {
     locate: (lon, lat, zoom) => map!.flyTo(lon, lat, zoom ?? 15),
@@ -185,6 +188,28 @@ function behaviourRings(): { pct: number; km: number }[] {
   if (!s?.category) return [];
   const plan = buildPlan({ category: s.category, terrain: s.terrain, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown || hasSignificantPoint() });
   return plan?.rings.items.map((r) => ({ pct: r.pct, km: r.km })) ?? [];
+}
+
+let shownArea: SearchAreaResult | undefined;
+
+/** What the terrain area depends on: the planning point and every subject field the rings use. */
+function searchAreaKey(): string | undefined {
+  const inc = cs.s.search?.incident, s = cs.s.subject;
+  if (!inc?.ipp || !s?.category) return undefined;
+  const sig = (inc.points ?? []).filter((p) => p.kind === 'significant').map((p) => `${p.lat},${p.lon}`).join(';');
+  return [inc.id, inc.ipp.lat, inc.ipp.lon, s.category, s.sex, s.age, s.terrain, s.suicideThreatened, s.depression, s.selfHarmHistory, s.significantPlaceKnown, sig].join('|');
+}
+
+/** Fetch the terrain-shaped area when its inputs change. Errors (not built, no point) are kept for the plan card. */
+function ensureSearchArea(): void {
+  const key = searchAreaKey();
+  if (!key) { if (cs.s.searchArea) { cs.s.searchArea = undefined; } return; }
+  if (cs.s.searchArea?.key === key) return;
+  const incId = cs.s.search!.incident!.id;
+  cs.s.searchArea = { key, loading: true };
+  get<{ area: SearchAreaResult }>(`/api/incidents/${incId}/search-area`)
+    .then((r) => { if (cs.s.searchArea?.key === key) { cs.s.searchArea = { key, loading: false, area: r.area }; cs.notify(); } })
+    .catch((e) => { if (cs.s.searchArea?.key === key) { cs.s.searchArea = { key, loading: false, error: e instanceof Error ? e.message : 'failed', status: e instanceof ApiError ? e.status : undefined }; cs.notify(); } });
 }
 
 /** Fetch the subject record when the incident or its `subjectUpdatedAt` changes (never in the WS snapshot). */
@@ -291,6 +316,8 @@ function applyLayers(): void {
   map.setLayerVisible('coverage-line', L.coverage);
   for (const id of ['targets-fill', 'targets-line', 'targets-point'] as const) map.setLayerVisible(id, L.targets);
   for (const id of ['behaviour-fill', 'behaviour-line'] as const) map.setLayerVisible(id, L.behaviour);
+  for (const id of ['area-fill', 'area-line', 'segment-line', 'corridor-line'] as const) map.setLayerVisible(id, L.terrain);
+  map.setLayerVisible('heat', L.heat);
   map.setLayerVisible('ais-dot', L.ais);
   map.setLayerVisible('labels', L.labels);
   map.setLayerVisible('topo', L.topo);

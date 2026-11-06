@@ -5,6 +5,8 @@ import type { Audit } from '../audit.js';
 import { requireAuth, type AuthCtx } from '../auth/middleware.js';
 import type { CalloutManager } from '../callout.js';
 import type { Db } from '../db/index.js';
+import type { TerrainService } from '../terrain/service.js';
+import { buildPlan } from '../../../shared/lpb/index.js';
 import type { SearchService } from './service.js';
 import { PHOTO_MAX_BYTES, type SubjectPatch } from './subject.js';
 import { tracksFor } from './tracks.js';
@@ -14,6 +16,7 @@ export interface SearchRoutesDeps extends AuthCtx {
   search: SearchService;
   callout: CalloutManager;
   audit: Audit;
+  terrain?: TerrainService;
 }
 
 export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): Promise<void> {
@@ -135,6 +138,41 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     } catch (e) {
       return bad(reply, e);
     }
+  });
+
+  // ---------------------------------------------------------- terrain-shaped search areas
+  /** Regions the subject's category distances can reach over this ground, from the planning point. */
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/search-area', { preHandler: member }, async (req, reply) => {
+    const terrain = d.terrain;
+    if (!terrain) return bad(reply, 'terrain is not available on this server', 404);
+    const inc = search.incident(req.params.id);
+    if (!inc) return bad(reply, 'incident not found', 404);
+    const point = inc.points?.find((p) => p.kind === 'lkp') ?? inc.points?.find((p) => p.kind === 'pls');
+    if (!point) return bad(reply, 'set the last known position (or place last seen) first', 409);
+    const s = search.subjects.get(inc.id);
+    if (!s?.category) return bad(reply, 'set a behaviour category on the Subject tab first', 409);
+    const plan = buildPlan({ category: s.category, terrain: s.terrain, sex: s.sex, age: s.age, suicideThreatened: s.suicideThreatened, previousAttempts: s.selfHarmHistory, depression: s.depression, significantPlaceKnown: s.significantPlaceKnown || Boolean(inc.points?.some((p) => p.kind === 'significant')) });
+    if (!plan) return bad(reply, 'unknown behaviour category', 409);
+    try {
+      const shares: Record<string, number> = {};
+      for (const sh of plan.locations.shares) if (sh.key !== 'Not Found') shares[sh.key] = sh.pct;
+      const significant = (inc.points ?? []).filter((p) => p.kind === 'significant').map((p) => ({ lat: p.lat, lon: p.lon, label: p.label }));
+      const area = await terrain.searchArea({ lat: point.lat, lon: point.lon, kind: point.kind }, plan.rings.items, { zeroPct: plan.rings.zeroSharePct, shares, significant });
+      return { area };
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      return bad(reply, e, code === 'NOT_BUILT' ? 503 : code === 'OUTSIDE' || code === 'NO_START' ? 422 : 500);
+    }
+  });
+
+  const admin = requireAuth(d, 'admin');
+  app.get('/api/admin/terrain', { preHandler: admin }, async (_req, reply) => (d.terrain ? d.terrain.status() : bad(reply, 'terrain is not available on this server', 404)));
+  app.post<{ Body: { refreshOsm?: boolean; refreshLidar?: boolean } }>('/api/admin/terrain/build', { preHandler: admin }, async (req, reply) => {
+    if (!d.terrain) return bad(reply, 'terrain is not available on this server', 404);
+    const started = d.terrain.startBuild({ refreshOsm: Boolean(req.body?.refreshOsm), refreshLidar: Boolean(req.body?.refreshLidar) });
+    if (!started) return bad(reply, 'a terrain build is already running', 409);
+    audit.log(req.principal, req.ip, 'terrain.build', { type: 'system', id: 'terrain' }, { refreshOsm: Boolean(req.body?.refreshOsm) });
+    return { ok: true, status: d.terrain.status() };
   });
 
   // ---------------------------------------------------------- subject (who we are looking for)
