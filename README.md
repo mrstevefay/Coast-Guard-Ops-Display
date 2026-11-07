@@ -348,7 +348,10 @@ node server/dist/server/src/terrain/cli.js  # inside the production image
 | Coast, cliffs, water, roads and paths, rail, land use | OpenStreetMap via Overpass (several mirrors, oversize boxes split automatically), else the Ireland PBF extract (`osmExtractUrl`) | ODbL |
 
 `config.yaml → terrain` sets the box (default Dublin city centre to Skerries), the cell size
-and the Overpass mirrors; defaults apply when the section is absent. Limits shown on the
+and the Overpass mirrors; defaults apply when the section is absent. `osmSource: extract`
+skips Overpass altogether. In the default `auto`, the build switches to the extract once
+failed Overpass requests add up to `overpassBudgetS` (300 s), so busy public servers cost
+minutes, not hours. Limits shown on the
 card: Copernicus is a 30 m surface model (it includes buildings and trees, so slopes are
 capped in towns and on roads, and small cliffs can be missed where no LiDAR exists or no
 cliff is mapped); tidal flats inside the coastline count as sea; no drift modelling. The

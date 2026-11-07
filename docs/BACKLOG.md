@@ -87,3 +87,24 @@ SAROPS-style item).
 **Acceptance.** From a test callout at Howth pier, enter "walker, 65, mobile", two
 scenarios, and get within two minutes: rings, ranked POIs, three segments assigned to Alpha
 teams, and a POA table that updates after a segment is marked searched at 70 % POD.
+
+## 6. Deploy over Tailscale, close SSH to the internet
+
+**Why.** CI deploys by SSH from GitHub runners, whose addresses change, so port 22 on the
+VPS firewall (`howth-cg-ops` group) is currently open to any IPv4 address. Login is
+key-only and the deploy key is forced to `/opt/howth-cg/deploy.sh`, but SSH should not face
+the internet.
+
+**Plan.**
+1. Tailscale on the VPS (`tailscale up --ssh=false`), tagged `tag:howth-cg`; add the install
+   to `deploy/cloud-init.yaml` for rebuilds.
+2. ACL: only `tag:ci` may reach `tag:howth-cg` on port 22; admins via their own devices.
+3. OAuth client in the Tailscale admin with the `tag:ci` tag; store `TS_OAUTH_CLIENT_ID` and
+   `TS_OAUTH_SECRET` as repo secrets.
+4. `ci.yml` deploy job: add `tailscale/github-action` before the SSH step, and set
+   `DEPLOY_HOST` to the VPS's tailnet name or 100.x address.
+5. Vultr firewall: delete the "ssh any (GitHub deploy, key-only)" rule; keep or drop the
+   admin-IP rule.
+
+**Acceptance.** A merge to main deploys through the tailnet, and `nc -zv 192.248.159.129 22`
+from outside the tailnet times out.

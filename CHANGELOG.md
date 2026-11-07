@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Terrain build gives up on busy Overpass servers sooner**: in `auto`, once failed
+  requests add up to `overpassBudgetS` (default 300 s), the build switches to the Ireland
+  extract instead of splitting and retrying box by box, which could take hours.
 - **Typed planning points** (console → Responders → Points): last known position, place
   last seen, home, vehicle, places significant to the subject, other. The LKP (else the PLS)
   is the planning point everything is drawn from; the old single IPP becomes each

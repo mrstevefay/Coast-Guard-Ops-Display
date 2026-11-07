@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { areaClass, floodSea, gridFor, lineFlag } from '../src/terrain/build.js';
+import { areaClass, floodSea, gridFor, lineFlag, overpassFetch, OverpassGaveUp } from '../src/terrain/build.js';
 import { CLASS, FLAG, MAX_SLOPE, passable, slopeFactor } from '../src/terrain/classes.js';
 import { regionPolygons } from '../src/terrain/contours.js';
 import { costDistance, type CostGrid } from '../src/terrain/dijkstra.js';
@@ -319,5 +319,43 @@ describe('probability of area, segments and corridors', () => {
     const kept = tidyPolygon([sq(0, 0, 100, 100), sq(10, 50, 80, 1), sq(20, 20, 10, 10), sq(60, 20, 2, 2)])!;
     expect(kept).toHaveLength(2); // the thin motorway-like hole and the speck go; the 10×10 pond stays
     expect(tidyPolygon([sq(0, 0, 2, 2)])).toBeUndefined();
+  });
+});
+
+describe('Overpass fetch with a failure budget', () => {
+  const urls = ['https://a.example/api/interpreter', 'https://b.example/api/interpreter', 'https://c.example/api/interpreter'];
+  /** A fake fetch that fails (or answers) and moves a fake clock on 60 s per request. */
+  const rig = (answer: (host: string) => Response) => {
+    let t = 0;
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      const host = new URL(url).host;
+      calls.push(host);
+      t += 60_000;
+      return answer(host);
+    }) as unknown as typeof fetch;
+    return { calls, ctx: { fetchImpl, log: () => {}, retryDelayMs: 0, now: () => t } };
+  };
+  const gateway = () => new Response('busy', { status: 504 });
+
+  it('gives up once failed requests have used the budget, without trying every server', async () => {
+    const { calls, ctx } = rig(gateway);
+    const budget = { leftMs: 150_000 };
+    await expect(overpassFetch(urls, 'q', '0_3', { ...ctx, budget })).rejects.toBeInstanceOf(OverpassGaveUp);
+    expect(calls).toEqual(['a.example', 'a.example', 'b.example']);
+    expect(budget.leftMs).toBeLessThanOrEqual(0);
+  });
+
+  it('without a budget tries every server twice, then reports nothing', async () => {
+    const { calls, ctx } = rig(gateway);
+    expect(await overpassFetch(urls, 'q', '0_3', ctx)).toBeUndefined();
+    expect(calls).toHaveLength(6);
+  });
+
+  it('returns the first good answer and charges only the failures', async () => {
+    const { ctx } = rig((h) => (h === 'b.example' ? new Response('{"elements":[]}') : gateway()));
+    const budget = { leftMs: 300_000 };
+    expect(await overpassFetch(urls, 'q', '0_3', { ...ctx, budget })).toEqual({ text: '{"elements":[]}', host: 'b.example' });
+    expect(budget.leftMs).toBe(180_000);
   });
 });
