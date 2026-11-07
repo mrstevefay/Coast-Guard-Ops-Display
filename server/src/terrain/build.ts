@@ -35,6 +35,8 @@ export interface TerrainConfig {
   osmTiles: number;
   /** 'auto': Overpass, falling back to the extract if Overpass fails; or force one. */
   osmSource: 'auto' | 'overpass' | 'extract';
+  /** In 'auto', total seconds of failed Overpass requests before giving up and using the extract. */
+  overpassBudgetS: number;
   /** A zlib PBF extract covering the bbox (Ireland: ~380 MB, cached after the first download). */
   osmExtractUrl: string;
 }
@@ -51,6 +53,7 @@ export const DEFAULT_TERRAIN: TerrainConfig = {
   copernicusBase: 'https://copernicus-dem-30m.s3.amazonaws.com',
   osmTiles: 4,
   osmSource: 'auto',
+  overpassBudgetS: 300,
   osmExtractUrl: 'https://download.openstreetmap.fr/extracts/europe/ireland.osm.pbf',
 };
 
@@ -125,6 +128,54 @@ async function withRetry<T>(what: string, fn: () => Promise<T>, tries = 3, log?:
     }
   }
   throw last instanceof Error ? last : new Error(String(last));
+}
+
+/** Thrown when failed Overpass requests have used up the time budget ('auto' then switches to the extract). */
+export class OverpassGaveUp extends Error {}
+
+export interface OverpassFetchCtx {
+  fetchImpl: typeof fetch;
+  log: (m: string) => void;
+  /** Milliseconds of failed requests still allowed; shared across boxes. Undefined: no limit. */
+  budget?: { leftMs: number };
+  timeoutMs?: number;
+  retryDelayMs?: number;
+  now?: () => number;
+}
+
+/**
+ * POST one Overpass query to each server in turn, twice each. Returns the first good answer,
+ * or undefined if every server failed. Time spent on failed requests is charged to the
+ * budget, and no request may outlast what is left of it; once it is spent, throws
+ * OverpassGaveUp instead of trying further.
+ */
+export async function overpassFetch(urls: string[], query: string, label: string, ctx: OverpassFetchCtx): Promise<{ text: string; host: string } | undefined> {
+  const now = ctx.now ?? Date.now;
+  const timeoutMs = ctx.timeoutMs ?? 150_000, delay = ctx.retryDelayMs ?? 2000;
+  const body = new URLSearchParams({ data: query });
+  for (const url of urls) {
+    const host = new URL(url).host;
+    for (let i = 0; i < 2; i++) {
+      const t0 = now();
+      const limit = ctx.budget ? Math.max(1000, Math.min(timeoutMs, ctx.budget.leftMs)) : timeoutMs;
+      try {
+        const r = await ctx.fetchImpl(url, { method: 'POST', body, headers: { 'user-agent': UA, 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(limit) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const text = await r.text();
+        if (!text.startsWith('{')) throw new Error('not JSON');
+        if (/"remark":\s*"runtime error/.test(text.slice(0, 4000))) throw new Error('Overpass runtime error (too much data)');
+        return { text, host };
+      } catch (e) {
+        ctx.log(`Overpass ${host} box ${label}: attempt ${i + 1} failed (${e instanceof Error ? e.message : String(e)})`);
+        if (ctx.budget) {
+          ctx.budget.leftMs -= now() - t0;
+          if (ctx.budget.leftMs <= 0) throw new OverpassGaveUp('the servers kept failing and the time allowed for failed requests ran out');
+        }
+        if (delay) await new Promise((res) => setTimeout(res, delay * (i + 1)));
+      }
+    }
+  }
+  return undefined;
 }
 
 interface OsmElement { type: 'way' | 'relation'; id: number; tags?: Record<string, string>; geometry?: { lat: number; lon: number }[]; members?: { type: string; role: string; geometry?: { lat: number; lon: number }[] }[] }
@@ -363,6 +414,8 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
   for (const k of PAINT_ORDER) polys.set(k, []);
   const grid = (p: { lat: number; lon: number }): XY => { const [x, y] = toItm(p.lat, p.lon); return toGrid(g, x, y); };
   let overpassUsed: string | undefined;
+  // In 'auto' a few minutes of failures is enough: the extract is the better bet by then.
+  const budget = cfg.osmSource === 'auto' ? { leftMs: cfg.overpassBudgetS * 1000 } : undefined;
   let lines = 0, areas = 0;
   const handle = (els: OsmElement[]) => {
     for (const el of els) {
@@ -395,23 +448,11 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
     let text: string | undefined;
     if (!opts.refreshOsm && fs.existsSync(file)) text = fs.readFileSync(file, 'utf8');
     else {
-      const body = new URLSearchParams({ data: overpassQuery(s, w, nn, e) });
-      for (const url of cfg.overpassUrls) {
-        try {
-          text = await withRetry(`Overpass ${new URL(url).host} box ${id}`, async () => {
-            const r = await fetchImpl(url, { method: 'POST', body, headers: { 'user-agent': UA, 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(150_000) });
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const t = await r.text();
-            if (!t.startsWith('{')) throw new Error('not JSON');
-            if (/"remark":\s*"runtime error/.test(t.slice(0, 4000))) throw new Error('Overpass runtime error (too much data)');
-            return t;
-          }, 2, log);
-          overpassUsed = new URL(url).host;
-          fs.writeFileSync(file, text);
-          break;
-        } catch {
-          /* next mirror */
-        }
+      const got = await overpassFetch(cfg.overpassUrls, overpassQuery(s, w, nn, e), id, { fetchImpl, log, budget });
+      if (got) {
+        text = got.text;
+        overpassUsed = got.host;
+        fs.writeFileSync(file, text);
       }
       if (!text) {
         if (depth >= 2) throw new Error(`OpenStreetMap: every Overpass server failed for box ${id}. Check network access to ${cfg.overpassUrls.map((u) => new URL(u).host).join(', ')}.`);

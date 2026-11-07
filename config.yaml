@@ -59,6 +59,10 @@ terrain:
     - https://overpass-api.de/api/interpreter
     - https://maps.mail.ru/osm/tools/overpass/api/interpreter
     - https://overpass.kumi.systems/api/interpreter
+  # auto: Overpass, switching to the Ireland extract after overpassBudgetS seconds of failed
+  # requests; or force 'overpass' or 'extract'.
+  osmSource: auto
+  overpassBudgetS: 300
 
 retention:
   # Days to keep track points after an incident closes. 0 = keep forever.
