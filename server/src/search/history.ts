@@ -107,6 +107,8 @@ export function eventsFor(db: Db, incidentId: string, users: Users): ReplayEvent
       'callout.started': `Callout received`,
       'callout.standdown': `Stand down`,
       'incident.ipp': d.cleared ? `${actor} cleared the planning point` : `${actor} set the planning point`,
+      'point.set': `${actor} set a ${String(d.kind ?? 'point').toUpperCase()} point`,
+      'point.deleted': `${actor} removed a ${String(d.kind ?? 'point').toUpperCase()} point`,
       'team.created': `${actor} created team ${d.name ?? t}`,
       'team.updated': `${actor} updated team ${t}${d.searchWidthM ? ` (sweep ${d.searchWidthM} m)` : ''}${d.status ? ` → ${d.status}` : ''}`,
       'team.members': `${actor} set ${t} members`,

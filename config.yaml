@@ -49,6 +49,17 @@ search:
   owntracksFriends: true
   staleFixSec: 120
 
+# Terrain-shaped search areas (console → Behaviour). Built once from open data: Copernicus 30 m
+# heights, GSI/OPW 2 m LiDAR along the coast, OpenStreetMap. Admin → Settings → Terrain → Build.
+terrain:
+  # lonMin, latMin, lonMax, latMax: Dublin city centre to Skerries, Howth and Lambay.
+  bbox: [-6.35, 53.33, -5.95, 53.60]
+  cellM: 10
+  overpassUrls:
+    - https://overpass-api.de/api/interpreter
+    - https://maps.mail.ru/osm/tools/overpass/api/interpreter
+    - https://overpass.kumi.systems/api/interpreter
+
 retention:
   # Days to keep track points after an incident closes. 0 = keep forever.
   trackDays: 0

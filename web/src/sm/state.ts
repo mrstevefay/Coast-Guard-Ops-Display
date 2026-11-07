@@ -1,4 +1,4 @@
-import type { DashboardState, Fix, IncidentSubject, Principal, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
+import type { DashboardState, Fix, IncidentSubject, PlanningPointKind, Principal, SearchAreaResult, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
 
 export interface ConsoleState {
   state?: DashboardState;
@@ -11,17 +11,19 @@ export interface ConsoleState {
   fixTimes: number[];
   selected: Set<number>;
   tab: 'responders' | 'teams' | 'targets' | 'subject' | 'behaviour';
-  layers: { tracks: boolean; coverage: boolean; targets: boolean; behaviour: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  layers: { tracks: boolean; coverage: boolean; targets: boolean; terrain: boolean; heat: boolean; behaviour: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  /** Terrain-shaped search area for the current point + subject (fetched when either changes). */
+  searchArea?: { key: string; loading: boolean; area?: SearchAreaResult; error?: string; status?: number };
   /** Subject record for the open incident (fetched when `subjectUpdatedAt` changes); null = none recorded. */
   subject?: IncidentSubject | null;
   subjectKey?: string;
-  /** Next map click sets the planning point. */
-  pickingIpp: boolean;
+  /** Next map click places this kind of point (or moves `pointId`). */
+  picking?: { kind: PlanningPointKind; pointId?: number };
   editingTargetId?: number;
   /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>); 'history' = past incidents (#history/<id>). */
   view: 'ops' | 'settings' | 'history';
   historyId?: string;
-  section: 'users' | 'displays' | 'feeds' | 'backups' | 'audit' | 'system' | 'account';
+  section: 'users' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
 }
 
 type Listener = () => void;
@@ -33,8 +35,7 @@ class ConsoleStore {
     fixTimes: [],
     selected: new Set(),
     tab: 'responders',
-    layers: { tracks: true, coverage: true, targets: true, behaviour: true, ais: false, labels: true, topo: false, follow: false },
-    pickingIpp: false,
+    layers: { tracks: true, coverage: true, targets: true, terrain: true, heat: true, behaviour: true, ais: false, labels: true, topo: false, follow: false },
     view: 'ops',
     section: 'users',
   };

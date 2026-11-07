@@ -133,7 +133,9 @@ session. With no token configured and accounts off, the mutating endpoints retur
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
 `PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
-`GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated);
+`GET|POST /api/incidents/:id/points`, `PATCH|DELETE /api/points/:id` (typed planning points); `GET /api/incidents/:id/search-area` (terrain-shaped regions, member);
+`GET /api/admin/terrain`, `POST /api/admin/terrain/build` (admin);
+`GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated; `suicideThreatened`, `depression`, `significantPlaceKnown` feed the plan card);
 `GET /api/positions/latest`. WebSocket `/api/ws` carries `state`, `search`, `pos`, `auth`, `ping`.
 
 ```bash
@@ -162,6 +164,7 @@ server/src
   util/             erddap, xml, http, units, seaAreas
 shared/types.ts     DashboardState, SearchSnapshot, Fix… — shared by server and web
 shared/lpb          lost person behaviour: MISPER-UK dataset (generated), types, helpers (rings, shares)
+server/src/terrain  terrain grid build (Copernicus, LiDAR, OSM), ITM projection, cost-distance, contours
 web/src             vanilla TS + Vite; main.ts = TV, m/ = crew PWA, sm/ = console, map.ts = MapLibre
 server/src/db       node:sqlite wrapper + numbered migrations
 server/src/auth     scrypt passwords, sessions + display keys, role middleware, routes
@@ -276,12 +279,82 @@ node scripts/fetch-misper.mjs     # rewrites shared/lpb/misperUk.ts from the liv
 npm test                          # server/test/lpb.test.ts reconciles every category
 ```
 
-The site publishes cumulative deciles (10–100 %), so the rings are the 50, 70 and 90 %
-distances (`RING_PCTS` in `shared/lpb/index.ts`); the 100 % value is the furthest case and
-is never drawn. These are UK land-search figures: use them with the tide, drift and local
-knowledge panels, not instead of them. misper.uk states no reuse licence; the data is used
-here with attribution for operational planning, and permission from The Centre for Search
-Research (tcsr.org.uk) should be confirmed before wider distribution.
+The site publishes cumulative deciles (10–100 %). The plan card draws rings at 25, 50, 75
+and 90 % (`PLAN_RING_PCTS` in `shared/lpb/plan.ts`); 25 and 75 are interpolated between
+the deciles and marked as such, 95 % is never derived from deciles (the 90–100 % gap is
+tens or hundreds of km) and the 100 % value is never drawn. Rings at 0 km are skipped and
+the card warns when a large share of a category is recorded at the planning point.
+
+Two further sources, both transcribed by hand with checks in `server/test/lpb2011.test.ts`:
+
+- `shared/lpb/ukmpbs2011.ts`: the UK Missing Person Behaviour Study, August 2011
+  (Perkins, Roberts & Feeney; n=1271). It splits distance, outcome and location by terrain
+  and sex, gives the location detail level (road vs path, habitation vs shelter), the
+  despondent characteristic modifiers (Table 16 and section c) and each category's
+  "possible scenarios". Every table is cited by number on the card; a few printed figures
+  that do not add up are kept as printed and listed in the test.
+- `shared/lpb/isridAsd.ts`: Koester (2020), Journal of Search & Rescue 4(1), the one
+  open-access ISRID paper: autism spectrum disorder (children and adults) and typically
+  developing children, by ecoregion (Ireland = temperate), with 25/50/75/95 % distance,
+  track offset, mobility, find location, outcome and survival-over-days. The rest of ISRID
+  (Koester, *Lost Person Behavior*, 2008) is not reproduced: it is not openly licensed.
+
+`shared/lpb/plan.ts` `buildPlan()` picks the most specific 2011 segment for the subject
+(category + terrain + sex → category + terrain → category + sex → category) and reports
+the level and n it used; `shared/lpb/tactics.ts` holds the reflex tasks with the statistic
+behind each one. These are UK and international land-search figures: use them with the
+tide, drift and local knowledge panels, not instead of them, and only as a trained search
+manager (misper.uk's own condition of use). misper.uk and the 2011 study state no reuse
+licence; the data is used here with attribution for operational planning, and permission
+from The Centre for Search Research (tcsr.org.uk) should be confirmed before wider
+distribution.
+
+## Terrain-shaped search areas
+
+The rings are straight-line statistics. On the console map each one is also drawn as the
+ground that distance can actually reach from the planning point: a cost-distance region over
+a 10 m grid (`server/src/terrain/`). Walking effort per metre is 1 on flat open ground, more
+on slopes (Tobler's hiking function, clamped so it never drops below 1) and on rough cover
+(heath 1.3, woodland 1.5, scrub 1.8, rock 2, wetland 3). Sea, inland water, mapped cliffs,
+slopes over 35°, rivers, railways and motorways are walls except where a road, path or pier
+crosses them. Because no factor is below 1, every region sits inside its circle: the
+terrain only takes reach away. Movement uses 16 directions with no corner cutting, so a
+one-cell wall is watertight and open ground comes out at about 97 % of the circle. Rings out
+to about 6 km are modelled at 10 m; longer ones share a coarser window.
+
+Inside the outer area each cell gets a probability of area (POA): the category's share at
+the point itself goes to the first 60 m, each band between rings gets its share, and within a
+band cells are weighted by where this category is found (MISPER-UK locations: travel aid,
+trees, water's edge, habitation, linear feature, open ground) against how much of each the
+band holds, capped at ×5 / ×0.2. Least-cost routes to marked significant places are weighted
+×2, the place itself ×3 ("lines and points"). The console shows it as a heat overlay and up
+to 12 ranked square segments clipped to the ground (200 m, 400 m or 800 m depending on the
+search size); **Target** turns a segment into an area target with its POA in the notes.
+
+The grid is built once per station from open data and kept under `data/terrain/` (about
+60 MB, plus a ~380 MB OpenStreetMap extract in the download cache if Overpass was not
+available; not in git):
+
+```bash
+npm run terrain:build                       # or Settings → Terrain → Build (admin)
+npm run terrain:build -- --refresh-osm      # refetch OpenStreetMap
+node server/dist/server/src/terrain/cli.js  # inside the production image
+```
+
+| Layer | Source | Licence |
+| --- | --- | --- |
+| Heights, everywhere | Copernicus DEM GLO-30, read by HTTP range from AWS open data | Copernicus free licence, attribution |
+| Heights, coast and road corridors | GSI / OPW (NASC) and TII 2 m LiDAR DTM tiles | CC BY 4.0 |
+| Coast, cliffs, water, roads and paths, rail, land use | OpenStreetMap via Overpass (several mirrors, oversize boxes split automatically), else the Ireland PBF extract (`osmExtractUrl`) | ODbL |
+
+`config.yaml → terrain` sets the box (default Dublin city centre to Skerries), the cell size
+and the Overpass mirrors; defaults apply when the section is absent. Limits shown on the
+card: Copernicus is a 30 m surface model (it includes buildings and trees, so slopes are
+capped in towns and on roads, and small cliffs can be missed where no LiDAR exists or no
+cliff is mapped); tidal flats inside the coastline count as sea; no drift modelling. The
+GSI ImageServers only serve hillshade pictures, so the LiDAR comes from the coverage layers'
+tile downloads. Tailte Éireann's 5 m DTM is not open; the raster loader would take it if
+licensed.
 
 ## Conventions
 

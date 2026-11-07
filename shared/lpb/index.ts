@@ -7,6 +7,13 @@ import { LPB_LOCATIONS, LPB_OUTCOMES, LPB_TERRAINS, type LpbDataset, type LpbLoc
 
 export * from './types.js';
 export { MISPER_UK };
+export { UKMPBS_2011, category2011 } from './ukmpbs2011.js';
+export type { Category2011 } from './ukmpbs2011.js';
+export { ISRID_ASD } from './isridAsd.js';
+export { buildPlan, interpolateKm, planRings, matchSegment, PLAN_RING_PCTS } from './plan.js';
+export type { SearchPlan, PlanInput, PlanContext, Basis, PlanRing } from './plan.js';
+export { tacticsFor } from './tactics.js';
+export type { Tactic } from './tactics.js';
 
 export const LPB: LpbDataset = MISPER_UK;
 

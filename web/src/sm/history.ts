@@ -2,6 +2,7 @@
  * History: past (and the current) taskings and callouts — who was on what team, where the
  * teams covered, a replay from start to finish, and the end-of-mission report.
  */
+import { POINT_KIND_LABEL, POINT_KIND_SHORT } from '../../../shared/types';
 import type { ConditionsSnapshot, DashboardState, Fix, IncidentReplay, IncidentSummary, SearchSnapshot } from '../../../shared/types';
 import { get } from '../api';
 import { esc, fmtDurationMin, fmtElapsed, fmtTime } from '../format';
@@ -117,7 +118,7 @@ function summaryTab(): string {
   const inc = replay!.incident;
   const stat = (k: string, v: string) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`;
   return `<div class="stats">${stat('Responders', `${r.totals.responders}`)}${stat('On scene', `${r.totals.onScene}`)}${stat('Teams', `${r.totals.teams}`)}${stat('Targets', `${r.totals.targetsDone}/${r.totals.targetsTotal}`)}${stat('Track', `${r.totals.trackKm} km`)}${stat('Swept', `${r.totals.sweptKm2} km²`)}</div>
-    ${inc.ipp ? `<p class="small"><b class="amber">IPP</b> ${esc(inc.ipp.label ?? '')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)}</p>` : ''}
+    ${(inc.points ?? []).map((p) => `<p class="small"><b class="amber">${esc(POINT_KIND_SHORT[p.kind])}</b> ${esc(p.label ?? POINT_KIND_LABEL[p.kind])} ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</p>`).join('') || (inc.ipp ? `<p class="small"><b class="amber">IPP</b> ${esc(inc.ipp.label ?? '')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)}</p>` : '')}
     <h4>Responders</h4>
     <table class="set-table small"><thead><tr><th>Name</th><th>Team</th><th>Resp.</th><th>Scene</th><th>On scene</th><th>Track</th></tr></thead><tbody>
     ${r.responders.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.team ? esc(p.teamCallsign ?? p.team) : '—'}</td><td title="${fmtTime(p.respondedAt)}">${fmtMin(p.responseMin)}</td><td title="${fmtTime(p.onSceneAt)}">${fmtMin(p.toSceneMin)}</td><td>${fmtMin(p.onSceneMin)}</td><td>${p.trackKm} km</td></tr>`).join('') || '<tr><td colspan="6" class="muted">None</td></tr>'}

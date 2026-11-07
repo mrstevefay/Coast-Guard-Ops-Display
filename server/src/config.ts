@@ -1,3 +1,4 @@
+import type { TerrainConfig } from './terrain/build.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -51,6 +52,8 @@ export interface AppConfig {
   };
   panels: PanelToggles;
   map: MapConfig;
+  /** Terrain-shaped search areas. Optional: defaults cover Dublin city centre to Skerries (server/src/terrain/build.ts). */
+  terrain?: Partial<TerrainConfig>;
   providers: {
     metForecast: ProviderBase & { url: string; fallbackUrl?: string; hoursAhead: number };
     metObservations: ProviderBase & { url: string; stationName: string };

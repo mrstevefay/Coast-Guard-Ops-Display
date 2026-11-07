@@ -3,14 +3,14 @@
  * Everything the crew app offers under More → Admin, plus the admin-only API
  * (backups, retention, audit log) that had no UI, laid out for a laptop.
  */
-import type { DevicePublic, ProviderHealth, Role, UserPublic } from '../../../shared/types';
+import type { DevicePublic, ProviderHealth, Role, TerrainStatus, UserPublic } from '../../../shared/types';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { esc } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, modal } from './modal';
 import { cs } from './state';
 
-export type SettingsSection = 'users' | 'displays' | 'feeds' | 'backups' | 'audit' | 'system' | 'account';
+export type SettingsSection = 'users' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
 
 interface FeedSetting { key: string; label: string; help: string; provider: string; env?: string; secret: boolean; kind: 'text' | 'url'; source: 'ui' | 'env' | 'config' | 'none'; value: string; isSet: boolean }
 
@@ -25,6 +25,7 @@ const SECTIONS: { id: SettingsSection; label: string; adminOnly: boolean }[] = [
   { id: 'displays', label: 'Display keys', adminOnly: true },
   { id: 'feeds', label: 'Data feeds', adminOnly: true },
   { id: 'backups', label: 'Backups & retention', adminOnly: true },
+  { id: 'terrain', label: 'Terrain', adminOnly: true },
   { id: 'audit', label: 'Audit log', adminOnly: true },
   { id: 'system', label: 'System status', adminOnly: false },
   { id: 'account', label: 'My account', adminOnly: false },
@@ -63,7 +64,7 @@ export function renderSettings(root: HTMLElement, force = false): void {
     <div class="set-body" id="set-body"><div id="set-reveal">${reveals.get(section) ?? ''}</div><div id="set-main"><p class="muted">Loading…</p></div></div>`;
   root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => (location.hash = `#settings/${b.dataset.section}`)));
   const main = root.querySelector<HTMLElement>('#set-main')!;
-  const render = { users: usersSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, audit: auditSection, system: systemSection, account: accountSection }[section];
+  const render = { users: usersSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, terrain: terrainSection, audit: auditSection, system: systemSection, account: accountSection }[section];
   if (!allowed.some((s) => s.id === section)) main.innerHTML = '<p class="muted">Admins only.</p>';
   else render(main).catch((e) => (main.innerHTML = `<p class="note error">${esc(msg(e))}</p>`));
 }
@@ -233,6 +234,46 @@ async function backupsSection(el: HTMLElement): Promise<void> {
       backup: (b) => run(async () => { b.setAttribute('disabled', ''); const r = await post<BackupInfo>('/api/admin/backup'); toast(`Backup written: ${r.file} (${fmtBytes(r.bytes)})`); }, load),
       retention: (b) => run(async () => { b.setAttribute('disabled', ''); const r = await post<Record<string, unknown>>('/api/admin/retention'); lastRetention = `<pre class="set-pre">${esc(JSON.stringify(r, null, 2))}</pre>`; toast('Retention run'); }, load),
     });
+  };
+  await load();
+}
+
+// ------------------------------------------------------------------ terrain
+async function terrainSection(el: HTMLElement): Promise<void> {
+  let timer: number | undefined;
+  const load = async () => {
+    if (!el.isConnected) { if (timer) clearInterval(timer); return; }
+    const st = await get<TerrainStatus>('/api/admin/terrain');
+    const job = st.job;
+    const running = Boolean(job?.running);
+    const fmtPct = (v?: number) => (v === undefined ? '—' : `${v} %`);
+    el.innerHTML = `<div class="set-head"><h2>Terrain</h2></div>
+      <div class="set-card"><h3>Terrain data for search areas</h3>
+        <p class="muted">The Behaviour tab shapes each distance ring to the ground: sea, cliffs, rivers, railways, steep slopes and rough cover take reach away. It needs a one-off build from open data: Copernicus 30 m heights everywhere, GSI/OPW 2 m LiDAR along the coast where it exists, and OpenStreetMap (coastline, cliffs, roads and paths, land use). The build takes a few minutes and about 60 MB on disk; callouts never wait on it.</p>
+        ${st.built ? `<table class="set-table"><tbody>
+          <tr><th>Built</th><td>${fmtDT(st.builtAt!)}</td></tr>
+          <tr><th>Area</th><td>${st.bbox!.map((v) => v.toFixed(2)).join(', ')} (lon/lat), ${st.size!.cols} × ${st.size!.rows} cells at ${st.cellM} m</td></tr>
+          <tr><th>Heights on land</th><td>LiDAR ${fmtPct(st.coverage?.lidarPct)}, satellite ${fmtPct(st.coverage?.copernicusPct)}, none ${fmtPct(st.coverage?.nonePct)}</td></tr>
+          <tr><th>Sea</th><td>${fmtPct(st.coverage?.seaPct)} of the grid</td></tr>
+          <tr><th>Sources</th><td>${st.sources?.lidarTiles ?? 0} LiDAR tiles, ${esc(st.sources?.copernicusTiles.join(', ') ?? '')}, ${st.sources?.osmTiles ?? 0} OSM tiles${st.sources?.overpass ? ` via ${esc(st.sources.overpass)}` : ''}</td></tr>
+        </tbody></table>` : '<p class="note warn">Not built yet: search areas fall back to plain circles until it is.</p>'}
+        <div class="btn-row">
+          <button class="btn-sm primary" data-act="build" ${running ? 'disabled' : ''}>${st.built ? 'Rebuild' : 'Build terrain data'}</button>
+          <label class="small"><input type="checkbox" id="t-osm" ${running ? 'disabled' : ''}/> refetch OpenStreetMap</label>
+          <label class="small"><input type="checkbox" id="t-lidar" ${running ? 'disabled' : ''}/> refetch LiDAR</label>
+        </div>
+        ${job ? `<p class="${job.error ? 'note error' : 'muted'}">${running ? `Building: ${esc(job.message)} (${job.pct} %)` : job.error ? `Last build failed: ${esc(job.error)}` : `Last build finished ${job.finishedAt ? fmtDT(job.finishedAt) : ''}`}</p>${job.log.length ? `<pre class="set-pre">${esc(job.log.slice(-15).join('\n'))}</pre>` : ''}` : ''}
+        ${st.attribution?.length ? `<p class="muted small">${st.attribution.map(esc).join('<br/>')}</p>` : ''}
+      </div>`;
+    wire(el, {
+      build: (b) => run(async () => {
+        b.setAttribute('disabled', '');
+        await post('/api/admin/terrain/build', { refreshOsm: (el.querySelector('#t-osm') as HTMLInputElement).checked, refreshLidar: (el.querySelector('#t-lidar') as HTMLInputElement).checked });
+        toast('Terrain build started');
+      }, load),
+    });
+    if (running && !timer) timer = window.setInterval(() => void load().catch(() => undefined), 2000);
+    if (!running && timer) { clearInterval(timer); timer = undefined; }
   };
   await load();
 }

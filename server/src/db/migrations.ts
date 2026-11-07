@@ -200,4 +200,30 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE incident_subjects ADD COLUMN category TEXT;
   ALTER TABLE incident_subjects ADD COLUMN terrain TEXT;
   `,
+  // 5 — despondent characteristics on the subject (UKMPBS 2011 Table 16 factors)
+  `
+  ALTER TABLE incident_subjects ADD COLUMN suicide_threatened INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE incident_subjects ADD COLUMN depression INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE incident_subjects ADD COLUMN significant_place INTEGER NOT NULL DEFAULT 0;
+  `,
+  // 6 — typed planning points (LKP, place last seen, home, vehicle, significant places); the old
+  // single IPP becomes the incident's 'lkp' point. incidents.ipp_* stay but are no longer written.
+  `
+  CREATE TABLE planning_points (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('lkp','pls','home','vehicle','significant','other')),
+    label TEXT,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    note TEXT,
+    set_at TEXT NOT NULL,
+    set_by INTEGER
+  );
+  CREATE INDEX planning_points_incident ON planning_points(incident_id);
+  CREATE UNIQUE INDEX planning_points_one_lkp ON planning_points(incident_id) WHERE kind = 'lkp';
+  CREATE UNIQUE INDEX planning_points_one_pls ON planning_points(incident_id) WHERE kind = 'pls';
+  INSERT INTO planning_points (incident_id, kind, label, lat, lon, set_at)
+    SELECT id, 'lkp', ipp_label, ipp_lat, ipp_lon, COALESCE(ipp_set_at, started_at) FROM incidents WHERE ipp_lat IS NOT NULL AND ipp_lon IS NOT NULL;
+  `,
 ];

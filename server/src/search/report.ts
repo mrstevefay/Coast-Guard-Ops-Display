@@ -1,4 +1,5 @@
-import { LPB, profileBySlug, ringRadiiKm } from '../../../shared/lpb/index.js';
+import { LPB, buildPlan, profileBySlug } from '../../../shared/lpb/index.js';
+import { POINT_KIND_LABEL, POINT_KIND_SHORT } from '../../../shared/types.js';
 import type { ConditionsSnapshot, IncidentReplay, ReplayEvent, ReplayFix, SearchIncident, Target, TargetGeometry, Team, TeamMembership } from '../../../shared/types.js';
 import type { AppConfig } from '../config.js';
 import { haversineKm } from '../util/units.js';
@@ -211,8 +212,9 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
     </table>`;
   const subject = r.subject && (r.subject.name || r.subject.age !== undefined || r.subject.sex) ? `<p><b>Subject:</b> ${esc(r.subject.name ?? 'not recorded')}${r.subject.sex ? `, ${esc(r.subject.sex)}` : ''}${r.subject.age !== undefined ? `, ${r.subject.age} yrs` : ''}. Further details are held on the ops server and are not reproduced here.</p>` : '';
   const profile = profileBySlug(r.subject?.category);
-  const behaviour = profile
-    ? `<p><b>Behaviour profile:</b> ${esc(profile.name)} (MISPER-UK, n=${profile.n}${profile.lowNumbersCaution ? ', low numbers' : ''})${r.subject?.terrain ? `, terrain ${esc(r.subject.terrain)}` : ''}. Found within ${ringRadiiKm(profile).map((x) => `${x.km} km (${x.pct} %)`).join(', ') || 'n/a'} of the planning point. ${esc(LPB.source.attribution)}</p>`
+  const plan = profile ? buildPlan({ category: profile.slug, terrain: r.subject?.terrain, sex: r.subject?.sex, age: r.subject?.age }) : undefined;
+  const behaviour = profile && plan
+    ? `<p><b>Behaviour profile:</b> ${esc(profile.name)} (MISPER-UK, n=${profile.n}${profile.lowNumbersCaution ? ', low numbers' : ''})${r.subject?.terrain ? `, terrain ${esc(r.subject.terrain)}` : ''}. Found within ${plan.rings.items.map((x) => `${x.km} km (${x.pct} %${x.interpolated ? ', interpolated' : ''})`).join(', ') || 'n/a'} of the planning point.${plan.studyDistance ? ` UK study 2011 (${esc(plan.studyDistance.basis.ref)}): ${plan.studyDistance.points.filter((x) => x.pct < 100).map((x) => `${x.km} km (${x.pct} %)`).join(', ')}.` : ''} ${esc(LPB.source.attribution)}</p>`
     : '';
   return `<!doctype html>
 <html lang="en-IE"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${esc(title)} — ${esc(station.name)}</title>
@@ -245,7 +247,7 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
   <div class="stat"><span>Area swept (est.)</span><b>${r.totals.sweptKm2} km²</b>${(r.totals.sweptKm2 * 100).toFixed(0)} ha</div>
 </div>
 ${inc.lat !== undefined && inc.lon !== undefined ? `<p><b>Incident position:</b> ${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}</p>` : ''}
-${inc.ipp ? `<p><b>Planning point:</b> ${esc(inc.ipp.label ?? 'IPP')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)} (set ${fmtHM(inc.ipp.setAt)})</p>` : ''}
+${inc.points?.length ? `<p><b>Planning points:</b> ${inc.points.map((p) => `${esc(POINT_KIND_LABEL[p.kind])}${p.label ? ` "${esc(p.label)}"` : ''} ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)} (${fmtHM(p.setAt)})`).join('; ')}.</p>` : inc.ipp ? `<p><b>Planning point:</b> ${esc(inc.ipp.label ?? 'IPP')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)} (set ${fmtHM(inc.ipp.setAt)})</p>` : ''}
 ${subject}
 ${behaviour}
 
@@ -285,6 +287,7 @@ function schematicMap(replay: IncidentReplay, station: { lat: number; lon: numbe
   const inc = replay.incident;
   if (inc.lat !== undefined && inc.lon !== undefined) pts.push([inc.lon, inc.lat]);
   if (inc.ipp) pts.push([inc.ipp.lon, inc.ipp.lat]);
+  for (const p of inc.points ?? []) pts.push([p.lon, p.lat]);
   for (const t of replay.targets) pts.push(...flat(t.geometry));
   for (const f of replay.fixes) pts.push([f.lon, f.lat]);
   // Focus on the search, not the station, when there is anything else to show.
@@ -329,6 +332,7 @@ function schematicMap(replay: IncidentReplay, station: { lat: number; lon: numbe
   }
   svg += `<circle cx="${X(station.lon).toFixed(1)}" cy="${Y(station.lat).toFixed(1)}" r="7" fill="#0d9488" stroke="#fff" stroke-width="2"/>`;
   if (inc.lat !== undefined && inc.lon !== undefined) svg += `<text x="${X(inc.lon).toFixed(1)}" y="${(Y(inc.lat) + 7).toFixed(1)}" font-size="22" text-anchor="middle" fill="#dc2626" font-weight="900">✚</text>`;
+  for (const p of (inc.points ?? []).filter((x) => x.kind !== 'lkp')) svg += `<circle cx="${X(p.lon).toFixed(1)}" cy="${Y(p.lat).toFixed(1)}" r="5" fill="${p.kind === 'significant' ? '#db2777' : p.kind === 'pls' ? '#ea580c' : '#64748b'}" stroke="#fff" stroke-width="1.5"/><text x="${(X(p.lon) + 8).toFixed(1)}" y="${(Y(p.lat) + 4).toFixed(1)}" font-size="11" fill="#334155">${esc(POINT_KIND_SHORT[p.kind])}</text>`;
   if (inc.ipp) svg += `<text x="${X(inc.ipp.lon).toFixed(1)}" y="${(Y(inc.ipp.lat) + 8).toFixed(1)}" font-size="24" text-anchor="middle" fill="#ca8a04">★</text>`;
   // scale bar: pick a round km
   const kmPerPx = kmX / W;

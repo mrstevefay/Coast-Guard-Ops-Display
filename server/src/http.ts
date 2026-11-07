@@ -22,6 +22,7 @@ import type { Scheduler } from './scheduler.js';
 import type { Settings } from './settings.js';
 import type { Devices } from './search/devices.js';
 import { owntracksRoutes } from './search/owntracks.js';
+import { TerrainService } from './terrain/service.js';
 import { searchRoutes } from './search/routes.js';
 import type { SearchService } from './search/service.js';
 import type { Tracking } from './search/tracking.js';
@@ -44,6 +45,8 @@ export interface ServerDeps {
   tracking: Tracking;
   /** Present when accounts + search are on. */
   search?: SearchService;
+  /** Terrain for search areas; built from cfg.terrain under dataDir/terrain when not given. */
+  terrain?: TerrainService;
   backupDir?: string;
   /** Runtime-editable feed settings (console → Settings → Data feeds). */
   settings?: Settings;
@@ -206,19 +209,24 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
       );
       const search = deps.search;
       if (search) {
-        await app.register(async (sub) => searchRoutes(sub, { ...auth, db: deps.db, search, callout, audit: deps.audit }));
+        const terrain = deps.terrain ?? new TerrainService(path.join(cfg.server.dataDir, 'terrain'), cfg.terrain, app.log);
+        await app.register(async (sub) => searchRoutes(sub, { ...auth, db: deps.db, search, callout, audit: deps.audit, terrain }));
         // snapshot to every authenticated socket on change (throttled) and on join
         let pending: NodeJS.Timeout | undefined;
         const push = () => {
           if (pending) return;
           pending = setTimeout(() => {
             pending = undefined;
-            hub.sendAuthenticated({ type: 'search', search: search.snapshot() });
+            // Display keys get the snapshot without personal points (home, significant places).
+            const full = { type: 'search' as const, search: search.snapshot() };
+            const forDisplay = { type: 'search' as const, search: search.snapshot(true) };
+            hub.send(full, (p) => p.kind === 'user' || (p.kind === 'open' && cfg.auth.open));
+            hub.send(forDisplay, (p) => p.kind === 'display');
           }, 250);
           pending.unref?.();
         };
         search.on('change', push);
-        hub.onJoin = (_p, send) => send({ type: 'search', search: search.snapshot() });
+        hub.onJoin = (p, send) => send({ type: 'search', search: search.snapshot(p.kind === 'display') });
         app.addHook('onClose', async () => {
           search.off('change', push);
           if (pending) clearTimeout(pending);
