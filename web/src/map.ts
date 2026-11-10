@@ -67,6 +67,7 @@ export class OpsMap {
       'search-area': { type: 'geojson', data: emptyFC() },
       segments: { type: 'geojson', data: emptyFC() },
       corridors: { type: 'geojson', data: emptyFC() },
+      highlight: { type: 'geojson', data: emptyFC() },
       ais: { type: 'geojson', data: emptyFC() },
     };
     const layers: maplibregl.LayerSpecification[] = [
@@ -91,21 +92,25 @@ export class OpsMap {
       // Terrain-shaped search areas (console only): nested regions, so the inner ones read darker.
       { id: 'area-fill', type: 'fill', source: 'search-area', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.09 } },
       { id: 'area-line', type: 'line', source: 'search-area', paint: { 'line-color': '#fbbf24', 'line-width': ['match', ['get', 'pct'], 50, 2.5, 2], 'line-opacity': 0.95 } },
+      // invisible fill so a click anywhere inside a segment hits it
+      { id: 'segment-fill', type: 'fill', source: 'segments', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0 } },
       { id: 'segment-line', type: 'line', source: 'segments', paint: { 'line-color': '#ffffff', 'line-width': 1.5, 'line-dasharray': [2, 2], 'line-opacity': 0.85 } },
+      { id: 'highlight-line', type: 'line', source: 'highlight', layout: { 'line-join': 'round' }, paint: { 'line-color': '#22d3ee', 'line-width': 4, 'line-opacity': 0.95 } },
+      { id: 'highlight-point', type: 'circle', source: 'highlight', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 12, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#22d3ee', 'circle-stroke-width': 3 } },
       { id: 'corridor-line', type: 'line', source: 'corridors', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#f472b6', 'line-width': 3, 'line-dasharray': [1, 1.5], 'line-opacity': 0.95 } },
       // Lost person behaviour rings (console only): % of subjects found within this distance of the IPP.
       { id: 'behaviour-fill', type: 'fill', source: 'behaviour', paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.05 } },
       { id: 'behaviour-line', type: 'line', source: 'behaviour', paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [4, 2], 'line-opacity': 0.9 } },
       // Search planning point (IPP): yellow diamond-ish marker every team can see.
       // Planning points: LKP yellow (the point the search is drawn from), PLS orange, significant places pink, home/vehicle grey-blue.
-      { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': ['match', ['get', 'kind'], 'lkp', 26, 'pls', 20, 0], 'circle-color': ['match', ['get', 'kind'], 'pls', '#fb923c', '#facc15'], 'circle-opacity': 0.25 } },
+      { id: 'ipp-halo', type: 'circle', source: 'ipp', paint: { 'circle-radius': ['match', ['get', 'kind'], 'lkp', 26, 'pls', 20, 'find', 22, 0], 'circle-color': ['match', ['get', 'kind'], 'pls', '#fb923c', 'find', '#ef4444', '#facc15'], 'circle-opacity': 0.25 } },
       {
         id: 'ipp-dot',
         type: 'circle',
         source: 'ipp',
         paint: {
           'circle-radius': ['match', ['get', 'kind'], 'lkp', 12, 'pls', 10, 8],
-          'circle-color': ['match', ['get', 'kind'], 'lkp', '#facc15', 'pls', '#fb923c', 'significant', '#f472b6', 'home', '#94a3b8', 'vehicle', '#60a5fa', '#cbd5e1'],
+          'circle-color': ['match', ['get', 'kind'], 'lkp', '#facc15', 'pls', '#fb923c', 'significant', '#f472b6', 'home', '#94a3b8', 'vehicle', '#60a5fa', 'find', '#ef4444', '#cbd5e1'],
           'circle-stroke-color': '#111111',
           'circle-stroke-width': ['match', ['get', 'kind'], 'lkp', 3, 2],
         },
@@ -368,6 +373,7 @@ export class OpsMap {
     if (id === 'heat') this.heatOn = on;
     if (id === 'segment-line') {
       this.terrainOn = on;
+      if (this.map?.getLayer('segment-fill')) this.map.setLayoutProperty('segment-fill', 'visibility', on ? 'visible' : 'none');
       this.refreshSegmentLabels();
     }
     if (id === 'behaviour-line') {
@@ -380,6 +386,28 @@ export class OpsMap {
       return;
     }
     if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  }
+
+  /** The caller sets the first view itself (the crew map opens on the member's target): skip the automatic fit. */
+  skipFirstFit(): void {
+    this.fitted = true;
+  }
+
+  /** Outline one shape in cyan (a list row being hovered); undefined clears it. */
+  highlight(geometry: GeoJSON.Geometry | undefined): void {
+    (this.map?.getSource('highlight') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] });
+  }
+
+  /** What a click landed on: a target (preferred, it is on top) or a terrain segment. */
+  shapeAt(point: maplibregl.PointLike): { kind: 'target'; id: number } | { kind: 'segment'; id: string } | undefined {
+    const m = this.map;
+    if (!m) return undefined;
+    const layers = ['targets-point', 'targets-line', 'targets-fill', 'segment-fill'].filter((l) => m.getLayer(l) && m.getLayoutProperty(l, 'visibility') !== 'none');
+    const hits = m.queryRenderedFeatures(point, { layers });
+    const t = hits.find((f) => f.layer.id.startsWith('targets-'));
+    if (t) return { kind: 'target', id: Number(t.properties?.id) };
+    const sg = hits.find((f) => f.layer.id === 'segment-fill');
+    return sg ? { kind: 'segment', id: String(sg.properties?.id) } : undefined;
   }
 
   flyTo(lon: number, lat: number, zoom = 15): void {

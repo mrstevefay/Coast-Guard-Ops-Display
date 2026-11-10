@@ -133,6 +133,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
 `PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
+`POST /api/targets/:id/progress` (a member of the target's team starts or finishes it), `POST /api/incidents/:id/finds` (crew report a find: subject, sighting, item or clue, at their phone's position or last fix; kept off display keys); `GET /api/places?q=` (place search, manager);
 `GET|POST /api/incidents/:id/points`, `PATCH|DELETE /api/points/:id` (typed planning points); `GET /api/incidents/:id/search-area` (terrain-shaped regions, member);
 `GET /api/admin/terrain`, `POST /api/admin/terrain/build` (admin);
 `GET|PUT /api/incidents/:id/subject` (+`/photo`; the subject's `category` is a MISPER-UK slug and `terrain` a MISPER-UK terrain name, both validated; `suicideThreatened`, `depression`, `significantPlaceKnown` feed the plan card);
@@ -308,6 +309,12 @@ manager (misper.uk's own condition of use). misper.uk and the 2011 study state n
 licence; the data is used here with attribution for operational planning, and permission
 from The Centre for Search Research (tcsr.org.uk) should be confirmed before wider
 distribution.
+
+## Working a search
+
+The console sidebar follows the search in three stages. **1 Subject** holds the points (last known position, place last seen, home, vehicle, significant places) and who the subject is. **2 Plan** shows the distance rings, live warnings, the first tasks and the most likely segments, with every statistic folded into Evidence and sources. **3 Teams** is one board: responders waiting for a team, a card per team with its current target and one next-step button, and every target below. Opening a stage switches the map's layers to suit (Plan, Teams, Clean). The draw tools sit on the map; clicking a segment or target on the map opens a card to assign it, and hovering a row outlines its shape.
+
+On the crew phone the Status page shows the next thing to do: respond, then the target once the team has one, with **Start search**, **Area searched** and **Report a find**. Team status follows on the console. A find arrives on the console as an alert with Show, and appears on every crew map, never on the TV. The crew app has five tabs: Status, Map (full screen, opening on the member's target, with Navigate), Team, Conditions (weather, tide, sea and the sea area forecast) and More.
 
 ## Placing points and positions
 

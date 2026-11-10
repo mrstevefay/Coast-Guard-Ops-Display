@@ -226,4 +226,26 @@ export const MIGRATIONS: string[] = [
   INSERT INTO planning_points (incident_id, kind, label, lat, lon, set_at)
     SELECT id, 'lkp', ipp_label, ipp_lat, ipp_lon, COALESCE(ipp_set_at, started_at) FROM incidents WHERE ipp_lat IS NOT NULL AND ipp_lon IS NOT NULL;
   `,
+  // 7 — finds reported by crew (clue, item, sighting, subject found) are planning points of kind
+  // 'find'. SQLite cannot widen a CHECK, so the table is rebuilt with the same rows and indexes.
+  `
+  CREATE TABLE planning_points_new (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('lkp','pls','home','vehicle','significant','other','find')),
+    label TEXT,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    note TEXT,
+    set_at TEXT NOT NULL,
+    set_by INTEGER
+  );
+  INSERT INTO planning_points_new (id, incident_id, kind, label, lat, lon, note, set_at, set_by)
+    SELECT id, incident_id, kind, label, lat, lon, note, set_at, set_by FROM planning_points;
+  DROP TABLE planning_points;
+  ALTER TABLE planning_points_new RENAME TO planning_points;
+  CREATE INDEX planning_points_incident ON planning_points(incident_id);
+  CREATE UNIQUE INDEX planning_points_one_lkp ON planning_points(incident_id) WHERE kind = 'lkp';
+  CREATE UNIQUE INDEX planning_points_one_pls ON planning_points(incident_id) WHERE kind = 'pls';
+  `,
 ];

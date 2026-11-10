@@ -1,5 +1,5 @@
 import { LPB, LPB_GROUPS, LPB_TERRAINS, buildPlan, outcomeShares, profileBySlug, suggestProfile, terrainsWithData, type Basis, type PlanRing, type SearchPlan, type Tactic } from '../../../shared/lpb/index';
-import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type SearchAreaResult, type SearchSegment, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
+import { MANAGER_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type SearchAreaResult, type SearchSegment, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
 import { del, get, patch, post, put } from '../api';
 import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
@@ -17,20 +17,21 @@ export interface SidebarActions {
   pickPoint: (kind: PlanningPointKind, pointId?: number) => void;
   /** Zoom the map to the lost-person-behaviour rings. */
   fitRings: () => void;
+  /** Outline a shape on the map while its list row is hovered. */
+  highlight: (g: GeoJSON.Geometry | undefined) => void;
 }
 
-const TAB_LABEL = { responders: 'Crew', teams: 'Teams', targets: 'Targets', subject: 'Subject', behaviour: 'Plan' } as const;
+const TAB_LABEL = { subject: '1 Subject', behaviour: '2 Plan', teams: '3 Teams' } as const;
 const TEAM_STATUSES: TeamStatus[] = ['forming', 'tasked', 'searching', 'returned', 'stood-down'];
 const TARGET_STATUSES: TargetStatus[] = ['planned', 'assigned', 'in-progress', 'done', 'cancelled'];
 const badge = (s: string) => `<span class="badge-s ${({ responding: 'amber', 'on-scene': 'green', available: 'blue', searching: 'amber', tasked: 'blue', 'in-progress': 'amber', done: 'green' } as Record<string, string>)[s] ?? 'grey'}">${esc(s)}</span>`;
 
 export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   const { search } = cs.s;
-  const tabs = (['responders', 'teams', 'targets', 'subject', 'behaviour'] as const)
-    .map((t) => {
-      const n = t === 'responders' ? search?.responders.filter((r) => r.status === 'responding' || r.status === 'on-scene').length ?? 0 : t === 'teams' ? search?.teams.length ?? 0 : t === 'targets' ? search?.targets.filter((x) => x.status !== 'cancelled').length ?? 0 : undefined;
-      return `<button class="tab ${cs.s.tab === t ? 'active' : ''}" data-tab="${t}">${TAB_LABEL[t]}${n ? ` <span class="tab-n">${n}</span>` : ''}</button>`;
-    })
+  // Teams shows how many responders are waiting for a team: the number that needs action.
+  const waiting = search ? search.responders.filter((r) => (r.status === 'responding' || r.status === 'on-scene') && !search.teams.some((t) => t.members.some((m) => m.userId === r.userId))).length : 0;
+  const tabs = (['subject', 'behaviour', 'teams'] as const)
+    .map((t) => `<button class="tab ${cs.s.tab === t ? 'active' : ''}" data-tab="${t}">${TAB_LABEL[t]}${t === 'teams' && waiting ? ` <span class="tab-n amber" title="Responding, not yet in a team">${waiting}</span>` : ''}</button>`)
     .join('');
   // The subject tab holds a form: never wipe it on a position tick, only when the data key changes.
   if (cs.s.tab === 'subject' && search?.incident) {
@@ -41,11 +42,13 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
       root.dataset.subjectKey = key;
       root.querySelector('.tabs-sm')!.innerHTML = tabs;
       wireTabs(root);
+      refreshPoints(root, a);
       return;
     }
     root.dataset.subjectKey = key;
-    root.innerHTML = `<div class="tabs-sm">${tabs}</div><div class="sb-body" id="subject-body"><p class="muted pad">Loading…</p></div>`;
+    root.innerHTML = `<div class="tabs-sm">${tabs}</div><div class="sb-body"><div class="k pad-k">Where</div><div id="points-host"></div><div id="subject-body"><p class="muted pad">Loading…</p></div></div>`;
     wireTabs(root);
+    refreshPoints(root, a);
     void subjectTab(root.querySelector('#subject-body')!, search.incident.id);
     return;
   }
@@ -68,13 +71,22 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   delete root.dataset.behaviourKey;
   let body = '';
   if (!search?.incident) body = `<p class="muted pad">No open tasking. Start one from the top bar (New tasking); a pager callout opens one automatically.</p>`;
-  else if (cs.s.tab === 'responders') body = pointsBar() + respondersTab(search.responders, search.teams);
-  else if (cs.s.tab === 'teams') body = teamsTab(search.teams, search.responders, search.targets);
-  else if (cs.s.tab === 'targets') body = targetsTab(search.targets, search.teams, a.drawMode());
+  else if (cs.s.tab === 'teams') body = respondersTab(search.responders, search.teams) + teamsTab(search.teams, search.responders, search.targets) + targetsTab(search.targets, search.teams);
   else body = `<p class="muted pad">No open tasking.</p>`;
   root.innerHTML = `<div class="tabs-sm">${tabs}</div><div class="sb-body">${body}</div>`;
   wireTabs(root);
   wire(root, a);
+}
+
+/** The points list on the Subject tab: redrawn on every update, while the form below it is kept. */
+function refreshPoints(root: HTMLElement, a: SidebarActions): void {
+  const host = root.querySelector<HTMLElement>('#points-host');
+  if (!host) return;
+  const html = pointsBar();
+  if (host.dataset.html === html) return;
+  host.dataset.html = html;
+  host.innerHTML = html;
+  wire(host, a);
 }
 
 function wireTabs(root: HTMLElement): void {
@@ -87,7 +99,7 @@ function pointsBar(): string {
   const pts = cs.s.search?.incident?.points ?? [];
   const pick = cs.s.picking;
   const has = (k: PlanningPointKind) => pts.some((p) => p.kind === k);
-  const addable = PLANNING_POINT_KINDS.filter((k) => !((k === 'lkp' || k === 'pls') && has(k)));
+  const addable = MANAGER_POINT_KINDS.filter((k) => !((k === 'lkp' || k === 'pls') && has(k)));
   const rows = pts
     .map((p) => `<div class="pt-row k-${p.kind}"><span class="pt-kind" title="${esc(POINT_KIND_LABEL[p.kind])}">${esc(POINT_KIND_SHORT[p.kind])}</span>
       <span class="grow"><b>${esc(p.label ?? POINT_KIND_LABEL[p.kind])}</b> <span class="muted small">${fmtTime(p.setAt)}</span>${p.note ? `<span class="muted small pt-note">${esc(p.note)}</span>` : ''}</span>
@@ -103,8 +115,9 @@ function pointsBar(): string {
 
 function respondersTab(responders: ResponderRow[], teams: Team[]): string {
   const latest = cs.s.search!.latest;
-  const active = responders.filter((r) => r.status !== 'stood-down');
-  if (!active.length) return `<p class="muted pad">Nobody has responded yet.</p>`;
+  const inTeam = new Set(teams.flatMap((t) => t.members.map((m) => m.userId)));
+  const active = responders.filter((r) => r.status !== 'stood-down' && r.status !== 'unavailable' && !inTeam.has(r.userId));
+  if (!active.length) return `<div class="k pad-k">Waiting for a team</div><p class="muted small pad0 pad-x">${responders.some((r) => r.status === 'responding' || r.status === 'on-scene') ? 'Everyone responding is in a team.' : 'Nobody has responded yet.'}</p>`;
   const rows = active
     .map((r) => {
       const fix = latest[r.userId];
@@ -121,7 +134,7 @@ function respondersTab(responders: ResponderRow[], teams: Team[]): string {
     })
     .join('');
   const n = cs.s.selected.size;
-  return `${rows}
+  return `<div class="k pad-k">Waiting for a team · ${active.length}</div>${rows}
     <div class="assign-bar ${n ? '' : 'disabled'}">
       <span>${n} selected</span>
       <select id="assign-team"><option value="">Assign to…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}<option value="new">+ New team</option></select>
@@ -158,11 +171,11 @@ function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]):
       </div>`;
     })
     .join('');
-  const unassigned = responders.filter((r) => !teams.some((t) => t.members.some((m) => m.userId === r.userId)) && (r.status === 'responding' || r.status === 'on-scene'));
-  return `${cards || '<p class="muted pad">No teams yet.</p>'}
+  void responders;
+  return `<div class="k pad-k">Teams</div>${cards || '<p class="muted small pad0 pad-x">No teams yet: tick responders above and choose + New team.</p>'}
     <button class="btn-sm primary wide" data-action="new-team">+ New team</button>
     <p class="muted small pad">New teams start at ${daylight ? '20 m (daylight)' : '10 m (after sunset)'} sweep width; change it per team with ⚙.</p>
-    ${unassigned.length ? `<p class="muted small pad">Not in a team: ${unassigned.map((r) => esc(r.name)).join(', ')}</p>` : ''}`;
+`;
 }
 
 /**
@@ -180,15 +193,12 @@ function teamTargetLine(t: Team, mine: Target[], all: Target[]): string {
   return `<div class="team-target"><span class="grow"><b data-zoom-target="${cur.id}">${esc(cur.name)}</b> ${badge(cur.status)}${live.length > 1 ? ` <span class="muted small">+${live.length - 1} more</span>` : ''}${done ? ` <span class="muted small">${done} searched</span>` : ''}</span>${step}</div>${assign && live.length < 2 ? `<div class="team-target">${assign}</div>` : ''}`;
 }
 
-function targetsTab(targets: Target[], teams: Team[], drawMode: string): string {
+function targetsTab(targets: Target[], teams: Team[]): string {
   const live = targets.filter((t) => t.status !== 'cancelled');
-  const groups = [...teams.map((t) => ({ label: t.name, colour: t.colour, items: live.filter((x) => x.teamId === t.id) })), { label: 'Unassigned', colour: '#9fb3c8', items: live.filter((x) => !x.teamId) }].filter((g) => g.items.length);
+  const groups = [{ label: 'Unassigned', colour: '#9fb3c8', items: live.filter((x) => !x.teamId) }, ...teams.map((t) => ({ label: t.name, colour: t.colour, items: live.filter((x) => x.teamId === t.id) }))].filter((g) => g.items.length);
   const editing = cs.s.editingTargetId;
-  return `<div class="draw-bar">
-      ${(['point', 'area', 'line'] as const).map((k) => `<button class="btn-sm ${drawMode === k ? 'on' : ''}" data-draw="${k}">${k === 'point' ? '● Point' : k === 'area' ? '▱ Area' : '⟋ Line'}</button>`).join('')}
-      ${drawMode !== 'static' ? `<button class="btn-sm danger" data-action="cancel-draw">Esc</button>` : ''}
-    </div>
-    ${groups.length ? groups.map((g) => `<div class="tgroup" style="--team:${esc(g.colour)}"><div class="tgroup-head"><span class="dot"></span>${esc(g.label)}</div>${g.items.map((t) => targetRow(t, teams, editing === t.id)).join('')}</div>`).join('') : '<p class="muted pad">Draw a point, area or line on the map to create a target.</p>'}`;
+  return `<div class="k pad-k">Targets · ${live.length}</div>
+    ${groups.length ? groups.map((g) => `<div class="tgroup" style="--team:${esc(g.colour)}"><div class="tgroup-head"><span class="dot"></span>${esc(g.label)}</div>${g.items.map((t) => targetRow(t, teams, editing === t.id)).join('')}</div>`).join('') : '<p class="muted small pad0 pad-x">Draw a point, area or line with the tools on the map, or assign a segment on the Plan tab.</p>'}`;
 }
 
 function targetRow(t: Target, teams: Team[], editing: boolean): string {
@@ -424,7 +434,7 @@ function segmentsTable(a: SearchAreaResult): string {
   if (!segs.length) return '';
   const teams = cs.s.search?.teams ?? [];
   // a segment already made into a target (its name starts with the segment id)
-  const taken = new Set((cs.s.search?.targets ?? []).filter((t) => t.status !== 'cancelled').map((t) => /^(S\d+)\b/.exec(t.name)?.[1]).filter(Boolean) as string[]);
+  const taken = segmentsTaken();
   const row = (s: SearchSegment) => `<tr><td><b>${esc(s.id)}</b></td><td class="small">${esc(ground(s.dominant))} · ${areaText(s.areaKm2)}</td><td class="num"><b class="amber">${s.poaPct} %</b></td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show on the map">◎</button>${taken.has(s.id) ? '<span class="muted small seg-added">Added</span>' : `<select class="seg-assign" data-seg-target="${esc(s.id)}" title="Make this an area target, for a team or for later"><option value="">Assign…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}${t.status === 'forming' ? '' : ` · ${esc(t.status)}`}</option>`).join('')}<option value="none">Target, no team yet</option></select>`}</td></tr>`;
   const top = segs.slice(0, 5), rest = segs.slice(5);
   return `<h4>Search segments <span class="src terrain" title="Probability of area: % of subjects in this category expected in each segment">POA</span></h4>
@@ -539,27 +549,46 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
   }));
   el.querySelectorAll<HTMLSelectElement>('[data-seg-target]').forEach((sel) => sel.addEventListener('change', async () => {
     const seg = segById(sel.dataset.segTarget!);
-    const incId = cs.s.search?.incident?.id;
-    if (!sel.value || !seg || !incId || seg.targetRing.length < 4) return;
-    const teamId = sel.value === 'none' ? null : Number(sel.value);
+    if (!sel.value || !seg) return;
     sel.disabled = true;
-    try {
-      // Name and notes are read by crew: plain ground, size and how to search it. The probability stays on the console.
-      await post(`/api/incidents/${incId}/targets`, {
-        name: `${seg.id} · ${ground(seg.dominant)}`.slice(0, 60),
-        kind: 'area',
-        geometry: { type: 'Polygon', coordinates: [seg.targetRing] },
-        priority: seg.rank <= 3 ? 1 : seg.rank <= 6 ? 2 : 3,
-        teamId,
-        notes: `Mostly ${ground(seg.dominant).toLowerCase()}, ${areaText(seg.areaKm2)}.${seg.rank === 1 && (area?.atPointPct ?? 0) > 0 ? ' Holds the last known position: search it closely, including cover.' : ''}`,
-      });
-      const team = (cs.s.search?.teams ?? []).find((t) => t.id === teamId);
-      toast(team ? `${seg.id} assigned to ${team.name}` : `${seg.id} added as a target`);
-    } catch (e) {
-      sel.disabled = false;
-      toast(e instanceof Error ? e.message : 'failed', true);
-    }
+    if (!(await segmentToTarget(seg, sel.value === 'none' ? null : Number(sel.value)))) sel.disabled = false;
   }));
+  el.querySelectorAll<HTMLElement>('tr:has([data-seg-locate])').forEach((tr) => {
+    const id = tr.querySelector<HTMLElement>('[data-seg-locate]')!.dataset.segLocate!;
+    tr.addEventListener('mouseenter', () => a.highlight(segById(id)?.geometry));
+    tr.addEventListener('mouseleave', () => a.highlight(undefined));
+  });
+}
+
+/**
+ * Make a terrain segment an area target, for a team or for later. Name and notes are read by
+ * crew: plain ground, size and how to search it; the probability stays on the console.
+ */
+export async function segmentToTarget(seg: SearchSegment, teamId: number | null): Promise<boolean> {
+  const incId = cs.s.search?.incident?.id;
+  const area = cs.s.searchArea?.area;
+  if (!incId || seg.targetRing.length < 4) return false;
+  try {
+    await post(`/api/incidents/${incId}/targets`, {
+      name: `${seg.id} · ${ground(seg.dominant)}`.slice(0, 60),
+      kind: 'area',
+      geometry: { type: 'Polygon', coordinates: [seg.targetRing] },
+      priority: seg.rank <= 3 ? 1 : seg.rank <= 6 ? 2 : 3,
+      teamId,
+      notes: `Mostly ${ground(seg.dominant).toLowerCase()}, ${areaText(seg.areaKm2)}.${seg.rank === 1 && (area?.atPointPct ?? 0) > 0 ? ' Holds the last known position: search it closely, including cover.' : ''}`,
+    });
+    const team = (cs.s.search?.teams ?? []).find((t) => t.id === teamId);
+    toast(team ? `${seg.id} assigned to ${team.name}` : `${seg.id} added as a target`);
+    return true;
+  } catch (e) {
+    toast(e instanceof Error ? e.message : 'failed', true);
+    return false;
+  }
+}
+
+/** Segment ids already made into targets (a segment target's name starts with its id). */
+export function segmentsTaken(): Set<string> {
+  return new Set((cs.s.search?.targets ?? []).filter((t) => t.status !== 'cancelled').map((t) => /^(S\d+)\b/.exec(t.name)?.[1]).filter(Boolean) as string[]);
 }
 
 /** Whether the evidence section is open; kept across re-renders. */
@@ -625,6 +654,11 @@ function wire(root: HTMLElement, a: SidebarActions): void {
   root.querySelectorAll<HTMLButtonElement>('[data-draw]').forEach((b) => b.addEventListener('click', () => a.startDraw(b.dataset.draw as 'point' | 'area' | 'line')));
   root.querySelector<HTMLButtonElement>('[data-action=cancel-draw]')?.addEventListener('click', () => a.stopEditing());
   root.querySelector<HTMLButtonElement>('[data-action=stop-edit]')?.addEventListener('click', () => a.stopEditing());
+  root.querySelectorAll<HTMLElement>('.target[data-target]').forEach((row) => {
+    const t = search?.targets.find((x) => x.id === Number(row.dataset.target));
+    row.addEventListener('mouseenter', () => a.highlight(t?.geometry as GeoJSON.Geometry | undefined));
+    row.addEventListener('mouseleave', () => a.highlight(undefined));
+  });
   root.querySelectorAll<HTMLElement>('[data-zoom-target]').forEach((b) => b.addEventListener('click', () => {
     const t = search!.targets.find((x) => x.id === Number(b.dataset.zoomTarget));
     if (!t) return;

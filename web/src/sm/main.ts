@@ -1,7 +1,7 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
+import { MANAGER_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
 import { ApiError, get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -12,7 +12,7 @@ import { TargetDrawing, type DrawKind } from './draw';
 import { historyMapResize, leaveHistory, renderHistory } from './history';
 import { closeModal, confirmBox, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
-import { renderSidebar } from './sidebar';
+import { GROUND_NAME, renderSidebar, segmentToTarget, segmentsTaken } from './sidebar';
 import { attachLocationSearch, type LocationPick } from './locate';
 import maplibregl from 'maplibre-gl';
 import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
@@ -67,6 +67,7 @@ function start(): void {
       <div class="layer-panel" id="layer-panel"></div>
       <div class="map-search"><input id="map-search" type="search" placeholder="Search a place or paste a position" aria-label="Search a place or paste a position" /></div>
       <div class="draw-hint" id="draw-hint"></div>
+      <div class="find-alerts" id="find-alerts"></div>
     </main>
     <section class="sm-settings" id="sm-settings"></section>
     <section class="sm-history" id="sm-history"></section>
@@ -157,7 +158,11 @@ function render(): void {
       // Planning points: one click on the map while armed places (or moves) a point.
       map!.getMap()!.on('click', (e) => {
         const pick = cs.s.picking;
-        if (!pick) return;
+        if (!pick) {
+          // not placing a point or drawing: a click on a target or segment opens its card
+          if ((drawing?.mode ?? 'static') === 'static') { const hit = map!.shapeAt(e.point); if (hit) openShapeCard(hit, e.lngLat); }
+          return;
+        }
         const inc = cs.s.search?.incident;
         setPicking(undefined);
         if (!inc) return;
@@ -173,6 +178,7 @@ function render(): void {
   ensureSubjectLoaded();
   map.setBehaviourRings(cs.s.search?.incident?.ipp, behaviourRings());
   ensureSearchArea();
+  announceFinds();
   const areaNow = cs.s.searchArea?.key === searchAreaKey() ? cs.s.searchArea?.area : undefined;
   if (areaNow !== shownArea) { map.setSearchArea(areaNow); shownArea = areaNow; applyLayers(); }
   renderTop();
@@ -185,6 +191,7 @@ function render(): void {
     drawMode: () => drawing?.mode ?? 'static',
     pickPoint: (kind, pointId) => setPicking(cs.s.picking && cs.s.picking.kind === kind && cs.s.picking.pointId === pointId ? undefined : { kind, pointId }),
     fitRings: () => map?.fitBehaviourRings(),
+    highlight: (g) => map?.highlight(g),
   });
   presetForTab();
   renderLayers();
@@ -262,6 +269,7 @@ const POINT_HINT: Record<PlanningPointKind, string> = {
   vehicle: 'Label, e.g. Silver Golf 12-D-…',
   significant: 'What is this place to them?',
   other: 'Label',
+  find: 'What was found',
 };
 
 async function movePoint(pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
@@ -287,7 +295,7 @@ function openPointBox(lat: number, lon: number, kind: PlanningPointKind, label =
   let chosen = kind;
   const el = document.createElement('form');
   el.className = 'pt-box';
-  const chips = () => PLANNING_POINT_KINDS.map((k) => `<button type="button" class="pt-chip k-${k} ${k === chosen ? 'on' : ''}" data-k="${k}" title="${esc(POINT_KIND_LABEL[k])}">${esc(POINT_KIND_SHORT[k])}</button>`).join('');
+  const chips = () => MANAGER_POINT_KINDS.map((k) => `<button type="button" class="pt-chip k-${k} ${k === chosen ? 'on' : ''}" data-k="${k}" title="${esc(POINT_KIND_LABEL[k])}">${esc(POINT_KIND_SHORT[k])}</button>`).join('');
   el.innerHTML = `<div class="pt-box-kind"><b id="pt-kind-name">${esc(POINT_KIND_LABEL[chosen])}</b></div>
     <div class="pt-chips">${chips()}</div>
     <input name="label" maxlength="120" value="${esc(label)}" placeholder="${esc(POINT_HINT[chosen])}" />
@@ -331,6 +339,66 @@ function placeFromSearch(p: LocationPick): void {
   openPointBox(p.lat, p.lon, kind, p.label ?? '');
 }
 
+let shapeCard: maplibregl.Popup | undefined;
+
+/** Card for a clicked target or segment: what it is, and the one or two things to do with it. */
+function openShapeCard(hit: { kind: 'target'; id: number } | { kind: 'segment'; id: string }, at: maplibregl.LngLat): void {
+  const m = map?.getMap();
+  const search = cs.s.search;
+  if (!m || !search?.incident) return;
+  shapeCard?.remove();
+  const teams = search.teams;
+  const el = document.createElement('div');
+  el.className = 'shape-card';
+  const teamOptions = (sel?: number | null) => teams.map((t) => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}${t.status === 'forming' ? '' : ` · ${esc(t.status)}`}</option>`).join('');
+  if (hit.kind === 'segment') {
+    const seg = cs.s.searchArea?.area?.segments?.find((x) => x.id === hit.id);
+    if (!seg) return;
+    const taken = segmentsTaken().has(seg.id);
+    el.innerHTML = `<b>${esc(seg.id)} · ${esc(GROUND_NAME[seg.dominant] ?? seg.dominant)}</b>
+      <div class="muted small">${seg.areaKm2 < 1 ? `${Math.round(seg.areaKm2 * 100)} ha` : `${seg.areaKm2.toFixed(1)} km²`} · POA <b class="amber">${seg.poaPct} %</b> · ${esc(seg.band)}</div>
+      ${taken ? '<div class="small muted">Already a target</div>' : `<select id="sc-assign"><option value="">Assign…</option>${teamOptions()}<option value="none">Target, no team yet</option></select>`}`;
+    el.querySelector<HTMLSelectElement>('#sc-assign')?.addEventListener('change', async (ev) => {
+      const v = (ev.target as HTMLSelectElement).value;
+      if (v && (await segmentToTarget(seg, v === 'none' ? null : Number(v)))) shapeCard?.remove();
+    });
+  } else {
+    const t = search.targets.find((x) => x.id === hit.id);
+    if (!t) return;
+    const team = teams.find((x) => x.id === t.teamId);
+    el.innerHTML = `<b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : t.status === 'done' ? 'green' : 'grey'}">${esc(t.status)}</span>
+      ${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}
+      <div class="sc-row"><select id="sc-team"><option value="">${team ? 'No team' : 'Assign…'}</option>${teamOptions(t.teamId)}</select><button class="btn-sm" id="sc-edit">Edit shape</button></div>`;
+    el.querySelector<HTMLSelectElement>('#sc-team')!.addEventListener('change', async (ev) => {
+      const v = (ev.target as HTMLSelectElement).value;
+      await patch(`/api/targets/${t.id}`, { teamId: v ? Number(v) : null });
+      shapeCard?.remove();
+    });
+    el.querySelector('#sc-edit')!.addEventListener('click', () => { shapeCard?.remove(); drawing?.editTarget(t); });
+  }
+  shapeCard = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: '280px', className: 'pt-popup' }).setLngLat(at).setDOMContent(el).addTo(m);
+}
+
+/** Finds reported by crew: announced on the console the moment they arrive, until acknowledged. */
+let seenFinds: Set<number> | undefined;
+function announceFinds(): void {
+  if (!cs.s.search) return;
+  const finds = (cs.s.search.incident?.points ?? []).filter((p) => p.kind === 'find');
+  if (!seenFinds) { seenFinds = new Set(finds.map((p) => p.id)); return; }
+  const fresh = finds.filter((p) => !seenFinds!.has(p.id));
+  for (const p of fresh) seenFinds.add(p.id);
+  if (!fresh.length) return;
+  const host = document.getElementById('find-alerts')!;
+  for (const p of fresh) {
+    const box = document.createElement('div');
+    box.className = `find-alert ${/^Subject found/.test(p.label ?? '') ? 'subject' : ''}`;
+    box.innerHTML = `<b>${esc(p.label ?? 'Find')}</b> <span class="muted small">${fmtTime(p.setAt)}</span>${p.note ? `<div>${esc(p.note)}</div>` : ''}<div class="fa-actions"><button class="btn-sm primary" data-show>Show</button><button class="btn-sm" data-ack>OK</button></div>`;
+    box.querySelector('[data-show]')!.addEventListener('click', () => map?.flyTo(p.lon, p.lat, 17));
+    box.querySelector('[data-ack]')!.addEventListener('click', () => box.remove());
+    host.prepend(box);
+  }
+}
+
 function renderTop(): void {
   const s = cs.s.state;
   const searchInc = cs.s.search?.incident;
@@ -368,16 +436,19 @@ function renderTop(): void {
 function renderLayers(): void {
   const el = document.getElementById('layer-panel')!;
   const L = cs.s.layers;
-  const key = `${cs.s.preset ?? ''}:${Object.values(L).join('')}`;
+  const mode = drawing?.mode ?? 'static';
+  const key = `${cs.s.preset ?? ''}:${Object.values(L).join('')}:${mode}:${Boolean(cs.s.search?.incident)}`;
   if (el.dataset.key === key) return;
   const menuOpen = el.querySelector<HTMLDetailsElement>('details')?.open ?? false;
   el.dataset.key = key;
   el.innerHTML = (['plan', 'teams', 'clean'] as const).map((p) => `<button class="mini ${cs.s.preset === p ? 'on' : ''}" data-preset="${p}">${p[0].toUpperCase() + p.slice(1)}</button>`).join('')
     + `<details class="layer-menu" ${menuOpen ? 'open' : ''}><summary class="mini">Layers ▾</summary><div class="layer-list">${(Object.keys(L) as (keyof typeof L)[]).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}/> ${LAYER_LABEL[k]}</label>`).join('')}</div></details>`
-    + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`;
+    + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`
+    + (cs.s.search?.incident ? `<span class="lp-sep"></span>${(['point', 'area', 'line'] as const).map((k) => `<button class="mini ${mode === k ? 'on' : ''}" data-draw="${k}" title="Draw a ${k} target (${k[0].toUpperCase()})">${k === 'point' ? '● Point' : k === 'area' ? '▱ Area' : '⟋ Line'}</button>`).join('')}${mode !== 'static' ? '<button class="mini danger" data-draw="stop" title="Stop drawing (Esc)">Esc</button>' : ''}` : '');
   el.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset as LayerPreset)));
   el.querySelectorAll<HTMLInputElement>('[data-layer]').forEach((c) => c.addEventListener('change', () => { (L as any)[c.dataset.layer!] = c.checked; cs.s.preset = undefined; applyLayers(); renderLayers(); }));
   el.querySelector('#fit-all')!.addEventListener('click', () => { if (cs.s.state) map?.fitAll(cs.s.state, cs.s.search); });
+  el.querySelectorAll<HTMLButtonElement>('[data-draw]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.draw!; if (k === 'stop' || drawing?.mode === k) drawing?.stopEditing(); else drawing?.setMode(k as DrawKind); }));
 }
 
 function setPreset(p: LayerPreset): void {
@@ -393,7 +464,7 @@ function presetForTab(): void {
   if (cs.s.tab === lastTab) return;
   lastTab = cs.s.tab;
   if (cs.s.preset === undefined) return;
-  const p: LayerPreset | undefined = cs.s.tab === 'behaviour' ? 'plan' : cs.s.tab === 'teams' || cs.s.tab === 'targets' ? 'teams' : undefined;
+  const p: LayerPreset | undefined = cs.s.tab === 'behaviour' ? 'plan' : cs.s.tab === 'teams' ? 'teams' : undefined;
   if (p && p !== cs.s.preset) setPreset(p);
 }
 
@@ -492,7 +563,7 @@ function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
     try {
       await post(`/api/incidents/${inc.id}/targets`, { kind, geometry, name: f.get('name'), teamId: f.get('teamId') ? Number(f.get('teamId')) : null, priority: Number(f.get('priority')), notes: f.get('notes') });
       closeModal();
-      cs.s.tab = 'targets';
+      cs.s.tab = 'teams';
     } catch (e) {
       toast(e instanceof Error ? e.message : 'failed', true);
     }

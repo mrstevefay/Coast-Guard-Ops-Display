@@ -366,11 +366,19 @@ export interface PlanningPoint {
  * and terrain areas are drawn from; `pls` (place last seen) stands in when there is no LKP.
  * `home` and `significant` are personal to the subject and never sent to display keys.
  */
-export type PlanningPointKind = 'lkp' | 'pls' | 'home' | 'vehicle' | 'significant' | 'other';
-export const PLANNING_POINT_KINDS: PlanningPointKind[] = ['lkp', 'pls', 'significant', 'home', 'vehicle', 'other'];
-export const PRIVATE_POINT_KINDS: PlanningPointKind[] = ['home', 'significant'];
-export const POINT_KIND_LABEL: Record<PlanningPointKind, string> = { lkp: 'Last known position', pls: 'Place last seen', home: 'Home', vehicle: 'Vehicle', significant: 'Significant place', other: 'Other' };
-export const POINT_KIND_SHORT: Record<PlanningPointKind, string> = { lkp: 'LKP', pls: 'PLS', home: 'HOME', vehicle: 'VEH', significant: '★', other: 'PT' };
+export type PlanningPointKind = 'lkp' | 'pls' | 'home' | 'vehicle' | 'significant' | 'other' | 'find';
+export const PLANNING_POINT_KINDS: PlanningPointKind[] = ['lkp', 'pls', 'significant', 'home', 'vehicle', 'other', 'find'];
+/** Kinds a manager adds by hand; finds are reported by crew from the field. */
+export const MANAGER_POINT_KINDS: PlanningPointKind[] = ['lkp', 'pls', 'significant', 'home', 'vehicle', 'other'];
+/** Never sent to display keys (TV, Pi mirror): personal places, and finds, which can be distressing on a wall screen. */
+export const PRIVATE_POINT_KINDS: PlanningPointKind[] = ['home', 'significant', 'find'];
+export const POINT_KIND_LABEL: Record<PlanningPointKind, string> = { lkp: 'Last known position', pls: 'Place last seen', home: 'Home', vehicle: 'Vehicle', significant: 'Significant place', other: 'Other', find: 'Find' };
+export const POINT_KIND_SHORT: Record<PlanningPointKind, string> = { lkp: 'LKP', pls: 'PLS', home: 'HOME', vehicle: 'VEH', significant: '★', other: 'PT', find: 'FIND' };
+
+/** What a crew member can report from the field. */
+export type FindType = 'subject' | 'sighting' | 'item' | 'clue';
+export const FIND_TYPES: FindType[] = ['subject', 'sighting', 'item', 'clue'];
+export const FIND_LABEL: Record<FindType, string> = { subject: 'Subject found', sighting: 'Sighting', item: 'Item found', clue: 'Clue' };
 
 /** One terrain-shaped region: the ground reachable within the ring's distance of the planning point. */
 export interface SearchAreaRegion {

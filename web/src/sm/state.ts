@@ -20,7 +20,8 @@ export interface ConsoleState {
   loadedIncidentId?: string;
   fixTimes: number[];
   selected: Set<number>;
-  tab: 'responders' | 'teams' | 'targets' | 'subject' | 'behaviour';
+  /** The three stages of a search: who and where, the plan, the teams and their targets. */
+  tab: 'subject' | 'behaviour' | 'teams';
   layers: { behaviour: boolean; terrain: boolean; areaFill: boolean; segments: boolean; heat: boolean; targets: boolean; tracks: boolean; coverage: boolean; labels: boolean; ais: boolean; topo: boolean; follow: boolean };
   /** Which layer preset is showing; undefined once the manager changes a single layer. */
   preset?: LayerPreset;
@@ -46,7 +47,7 @@ class ConsoleStore {
     tracks: new Map(),
     fixTimes: [],
     selected: new Set(),
-    tab: 'responders',
+    tab: 'subject',
     layers: { behaviour: true, terrain: true, areaFill: true, segments: true, heat: true, targets: true, tracks: true, coverage: true, labels: true, ais: false, topo: false, follow: false },
     preset: 'plan',
     view: 'ops',

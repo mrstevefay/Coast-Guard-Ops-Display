@@ -1,4 +1,4 @@
-export type Route = 'status' | 'weather' | 'tide' | 'saf' | 'map' | 'team' | 'more' | 'profile' | 'admin' | 'privacy' | 'password' | 'login' | 'device';
+export type Route = 'status' | 'conditions' | 'weather' | 'tide' | 'saf' | 'map' | 'team' | 'more' | 'profile' | 'admin' | 'privacy' | 'password' | 'login' | 'device';
 
 export interface RouteMatch {
   route: Route;
@@ -8,6 +8,7 @@ export interface RouteMatch {
 const ROUTES: Record<string, Route> = {
   '': 'status',
   status: 'status',
+  conditions: 'conditions',
   weather: 'weather',
   tide: 'tide',
   saf: 'saf',
