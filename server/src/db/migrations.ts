@@ -248,4 +248,44 @@ export const MIGRATIONS: string[] = [
   CREATE UNIQUE INDEX planning_points_one_lkp ON planning_points(incident_id) WHERE kind = 'lkp';
   CREATE UNIQUE INDEX planning_points_one_pls ON planning_points(incident_id) WHERE kind = 'pls';
   `,
+  // 8 — incident contacts: a station directory of standing contacts (Garda station, MRCC, units),
+  // the people and agencies involved in each incident, and a short call log. Next of kin and
+  // the reporting person are private: never in the snapshot, cleared after the incident by retention.
+  `
+  CREATE TABLE station_contacts (
+    id INTEGER PRIMARY KEY,
+    role TEXT NOT NULL,
+    name TEXT NOT NULL,
+    organisation TEXT,
+    phone TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE incident_contacts (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    name TEXT NOT NULL,
+    organisation TEXT,
+    phone TEXT,
+    reference TEXT,
+    notes TEXT,
+    directory_id INTEGER REFERENCES station_contacts(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    created_by INTEGER,
+    redacted_at TEXT
+  );
+  CREATE INDEX incident_contacts_incident ON incident_contacts(incident_id);
+  CREATE TABLE contact_log (
+    id INTEGER PRIMARY KEY,
+    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    contact_id INTEGER REFERENCES incident_contacts(id) ON DELETE SET NULL,
+    at TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('in','out','note')),
+    text TEXT NOT NULL,
+    by_user INTEGER
+  );
+  CREATE INDEX contact_log_incident ON contact_log(incident_id, at);
+  `,
 ];

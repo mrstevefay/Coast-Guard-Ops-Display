@@ -2,6 +2,7 @@ import type { Audit } from '../audit.js';
 import type { Sessions } from '../auth/sessions.js';
 import type { AppConfig } from '../config.js';
 import { now, type Db } from '../db/index.js';
+import { Contacts } from './contacts.js';
 import type { Devices } from './devices.js';
 
 export interface RetentionResult {
@@ -9,6 +10,7 @@ export interface RetentionResult {
   lastFixesCleared: number;
   sessionsPurged: number;
   auditPurged: number;
+  privateContactsCleared: number;
   ranAt: string;
 }
 
@@ -26,7 +28,8 @@ export function runRetention(db: Db, cfg: AppConfig, deps: { devices: Devices; s
   const lastFixesCleared = r.lastFixHours > 0 ? deps.devices.clearStaleLast(r.lastFixHours) : 0;
   const sessionsPurged = deps.sessions.purgeExpired();
   const auditPurged = r.auditYears > 0 ? deps.audit.purgeOlderThan(new Date(Date.now() - r.auditYears * 365 * 86400_000).toISOString()) : 0;
-  const result = { positionsDeleted, lastFixesCleared, sessionsPurged, auditPurged, ranAt: now() };
+  const privateContactsCleared = new Contacts(db).redactPrivate(r.privateContactDays ?? 30);
+  const result = { positionsDeleted, lastFixesCleared, sessionsPurged, auditPurged, privateContactsCleared, ranAt: now() };
   deps.audit.log(undefined, undefined, 'retention.ran', undefined, result);
   return result;
 }

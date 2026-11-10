@@ -121,3 +121,27 @@ from outside the tailnet times out.
 5. Retention follows the incident record. Next-of-kin details are cleared once the incident is closed and the report filed, per GDPR data minimisation.
 
 **Acceptance.** From a test tasking, add the Garda contact from the directory and a next of kin by hand, log two calls, and see both in the report. The TV and a crew phone show neither the next of kin nor the call log.
+
+## 8. Terrain shipped ready-built for the station's area, after a review of sources
+
+**Why.** Search areas read terrain from local files, so nothing downloads during a callout. But those files are built on the server, from Copernicus, GSI/OPW and TII LiDAR downloads, Overpass and a 375 MB OpenStreetMap extract. The first build on the VPS hit Overpass outages. A new station, a rebuilt server or a lost data volume all depend on outside servers being up at that moment. Terrain should arrive with the deploy, built and checked beforehand, never fetched on the live server.
+
+**Step 1: review the terrain sources, paid ones included, before building the package.** For each source, record resolution, coverage of the station area (Dublin city centre to Skerries), licence, whether the licence allows shipping the data in a build, cost, how often it is updated, and how well it shows cliffs and towns. Candidates, each to be checked:
+
+| Need | Free | Paid or by agreement |
+| --- | --- | --- |
+| Ground height | GSI/OPW and TII LiDAR, 1–2 m, partial coverage (used now); Copernicus GLO-30, a 30 m surface model (used now); EU-DEM 25 m; FABDEM 30 m, with buildings and trees removed (better in towns; free for non-commercial use) | Tailte Éireann (formerly OSi) 5 m DTM and height data; commercial 5 m DTMs for Ireland, such as Intermap NEXTMap; Bluesky or Airbus WorldDEM |
+| Land cover | OpenStreetMap (used now); National Land Cover Map 2018 (Tailte Éireann and EPA); CORINE 2018, 100 m | Tailte Éireann Prime2 polygons |
+| Coast and cliffs | OpenStreetMap (used now) | Tailte Éireann high-water mark and Prime2 cliffs |
+| Place names | OpenStreetMap (used now) | Tailte Éireann gazetteer; Eircode lookup (ECAD), which also unlocks Eircodes in the position box |
+
+Check first whether the Coast Guard, as a public body under the Department of Transport, already has Tailte Éireann data through a public-sector mapping agreement. That could make the 5 m DTM and Prime2 available at no new cost. Output: a short recommendation with costs, and a source for each layer.
+
+**Step 2: build a terrain package per station area, ahead of time.**
+1. The terrain build becomes an offline step, run on a workstation or in a manual CI job, never on the live server. Its input is the station's area and the chosen sources. Its output is a versioned package: the grid, `places.json`, a manifest of sources and licences, and checksums. The current area is about 60 MB.
+2. The package is published as a GitHub release asset, or baked into the image if every licence allows it. `deploy.sh` installs the package that matches the release and checks its checksums. It never builds.
+3. The server only loads the package. Settings → Terrain shows the package version, area, sources and date, and no longer has a Build button on the live server.
+4. Validation runs before a package is published: the spot heights at Howth summit (171 m), the pier and the Baily, the sea mask, place search, and a test search area. A package that fails is not published.
+5. Rebuilds are planned, for example every quarter for OpenStreetMap changes, or when a better source is licensed. They are never done during a callout.
+
+**Acceptance.** A fresh server deployed with no internet access beyond the release has terrain and place search working at first start. The Settings page names the package and its sources. No terrain download code runs on the live server.

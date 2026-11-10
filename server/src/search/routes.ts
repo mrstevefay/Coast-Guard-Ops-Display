@@ -351,6 +351,90 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     }
   });
 
+  // ---------------------------------------------------------- contacts (managers only; never in the snapshot)
+  type ContactBody = { role?: string; name?: string; organisation?: string | null; phone?: string | null; reference?: string | null; notes?: string | null; directoryId?: number };
+  const contactAudit = (c: { id: number; role: string }) => ({ contactId: c.id, role: c.role });
+  const by = (req: { principal?: { kind: string; userId?: number } }) => (req.principal?.kind === 'user' ? req.principal.userId : undefined);
+
+  app.get('/api/contacts', { preHandler: manager }, async () => ({ contacts: search.contacts.directory() }));
+  app.post<{ Body: ContactBody }>('/api/contacts', { preHandler: manager }, async (req, reply) => {
+    try {
+      const c = search.contacts.addStation(req.body ?? {});
+      audit.log(req.principal, req.ip, 'directory.added', { type: 'contact', id: c.id }, { role: c.role, name: c.name });
+      return { contact: c };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+  app.patch<{ Params: { id: string }; Body: ContactBody }>('/api/contacts/:id', { preHandler: manager }, async (req, reply) => {
+    try {
+      const c = search.contacts.updateStation(Number(req.params.id), req.body ?? {});
+      audit.log(req.principal, req.ip, 'directory.updated', { type: 'contact', id: c.id }, { role: c.role, name: c.name });
+      return { contact: c };
+    } catch (e) {
+      return bad(reply, e, /not found/.test(String((e as Error).message)) ? 404 : 400);
+    }
+  });
+  app.delete<{ Params: { id: string } }>('/api/contacts/:id', { preHandler: manager }, async (req, reply) => {
+    try {
+      search.contacts.removeStation(Number(req.params.id));
+      audit.log(req.principal, req.ip, 'directory.removed', { type: 'contact', id: req.params.id });
+      return { ok: true };
+    } catch (e) {
+      return bad(reply, e, 404);
+    }
+  });
+
+  /** The incident's contacts and call log. Every read is audited: it can hold next-of-kin details. */
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/contacts', { preHandler: manager }, async (req, reply) => {
+    if (!search.incidentById(req.params.id)) return bad(reply, 'incident not found', 404);
+    audit.log(req.principal, req.ip, 'contacts.viewed', { type: 'incident', id: req.params.id });
+    return { contacts: search.contacts.list(req.params.id), log: search.contacts.log(req.params.id) };
+  });
+  app.post<{ Params: { id: string }; Body: ContactBody }>('/api/incidents/:id/contacts', { preHandler: manager }, async (req, reply) => {
+    if (!search.incidentById(req.params.id)) return bad(reply, 'incident not found', 404);
+    try {
+      const c = search.contacts.add(req.params.id, req.body ?? {}, by(req));
+      audit.log(req.principal, req.ip, 'contact.added', { type: 'incident', id: req.params.id }, contactAudit(c));
+      search.contactsChanged();
+      return { contact: c };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+  app.patch<{ Params: { id: string }; Body: ContactBody }>('/api/incident-contacts/:id', { preHandler: manager }, async (req, reply) => {
+    try {
+      const c = search.contacts.update(Number(req.params.id), req.body ?? {});
+      audit.log(req.principal, req.ip, 'contact.updated', { type: 'incident', id: c.incidentId }, contactAudit(c));
+      search.contactsChanged();
+      return { contact: c };
+    } catch (e) {
+      return bad(reply, e, /not found/.test(String((e as Error).message)) ? 404 : 400);
+    }
+  });
+  app.delete<{ Params: { id: string } }>('/api/incident-contacts/:id', { preHandler: manager }, async (req, reply) => {
+    try {
+      const c = search.contacts.remove(Number(req.params.id));
+      audit.log(req.principal, req.ip, 'contact.removed', { type: 'incident', id: c.incidentId }, contactAudit(c));
+      search.contactsChanged();
+      return { ok: true };
+    } catch (e) {
+      return bad(reply, e, 404);
+    }
+  });
+  /** One line in the call log: who rang whom and what was said. The text stays out of the audit log. */
+  app.post<{ Params: { id: string }; Body: { contactId?: number | null; direction?: string; text?: string } }>('/api/incidents/:id/contact-log', { preHandler: manager }, async (req, reply) => {
+    if (!search.incidentById(req.params.id)) return bad(reply, 'incident not found', 404);
+    try {
+      const entry = search.contacts.addLog(req.params.id, req.body ?? {}, by(req));
+      audit.log(req.principal, req.ip, 'contact.logged', { type: 'incident', id: req.params.id }, { logId: entry.id, contactId: entry.contactId, direction: entry.direction });
+      search.contactsChanged();
+      return { entry };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
   // ---------------------------------------------------------- crew in the field
   /** A team member starts or finishes their own team's target (the console sees it at once). */
   app.post<{ Params: { id: string }; Body: { status?: string } }>('/api/targets/:id/progress', { preHandler: member }, async (req, reply) => {

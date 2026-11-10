@@ -43,6 +43,8 @@ export interface AppConfig {
     lastFixHours: number;
     auditYears: number;
     backupKeep: number;
+    /** Days after an incident closes before next-of-kin and reporting-person details are cleared; 0 = keep. */
+    privateContactDays: number;
   };
   upstream: {
     /** wss://ops.example.ie — when set, this server mirrors the hosted one for the kiosk. */

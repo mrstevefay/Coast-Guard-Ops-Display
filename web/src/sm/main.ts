@@ -14,6 +14,7 @@ import { closeModal, confirmBox, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
 import { GROUND_NAME, renderSidebar, segmentToTarget, segmentsTaken } from './sidebar';
 import { attachLocationSearch, type LocationPick } from './locate';
+import { contactsCount, contactsOnUpdate, contactsOpen, toggleContacts } from './contacts';
 import maplibregl from 'maplibre-gl';
 import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
 
@@ -179,6 +180,7 @@ function render(): void {
   map.setBehaviourRings(cs.s.search?.incident?.ipp, behaviourRings());
   ensureSearchArea();
   announceFinds();
+  contactsOnUpdate();
   const areaNow = cs.s.searchArea?.key === searchAreaKey() ? cs.s.searchArea?.area : undefined;
   if (areaNow !== shownArea) { map.setSearchArea(areaNow); shownArea = areaNow; applyLayers(); }
   renderTop();
@@ -414,13 +416,18 @@ function renderTop(): void {
     const modeKey = `${tasking ? 'tasking' : 'callout'}:${inc.id}`;
     if (actions.dataset.mode !== modeKey) {
       actions.dataset.mode = modeKey;
-      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      actions.innerHTML = `<button class="btn-sm" id="contacts-btn" title="Gardaí, MRCC, next of kin and the call log">Contacts <span class="tab-n" id="contacts-n"></span></button><a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      actions.querySelector('#contacts-btn')!.addEventListener('click', () => { toggleContacts(); renderTop(); });
       const close = document.getElementById('sm-close')!;
       close.innerHTML = `<button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button>`;
       close.querySelector('#standdown')!.addEventListener('click', async () => {
         if (await confirmBox(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.', tasking ? 'Close tasking' : 'Stand down')) await post(`/api/incidents/${inc.id}/close`);
       });
     }
+    const n = contactsCount();
+    const cn = document.getElementById('contacts-n');
+    if (cn) { cn.textContent = n ? String(n) : ''; cn.hidden = !n; }
+    document.getElementById('contacts-btn')?.classList.toggle('on', contactsOpen());
   } else {
     el.innerHTML = `<span class="mode-tag mode-standby">STANDBY</span><span class="muted">No open tasking</span>`;
     if (actions.dataset.mode !== 'standby') {
