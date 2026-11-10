@@ -473,6 +473,8 @@ export interface SearchIncident {
   endReason?: string;
   /** The planning point the search is drawn from: the LKP, else the place last seen. */
   ipp?: PlanningPoint;
+  /** Changes when this incident's contacts or call log change; managers refetch them then. Never sent to display keys. */
+  contactsRev?: string;
   /** All typed points. Display keys receive only the non-personal kinds (see PRIVATE_POINT_KINDS). */
   points?: PlanningPointRow[];
   /** Bumps when the subject record changes, so phones refetch it. Details are never in the snapshot. */
@@ -711,3 +713,51 @@ export type WsMessage =
   | { type: 'pos'; fixes: Fix[] }
   /** Full search snapshot on connect and on every change (throttled). */
   | { type: 'search'; search: SearchSnapshot };
+
+// ---------------------------------------------------------------- incident contacts
+export type ContactRole = 'garda' | 'mrcc' | 'ambulance' | 'fire' | 'helicopter' | 'rnli' | 'unit' | 'nok' | 'reporter' | 'other';
+export const CONTACT_ROLES: ContactRole[] = ['garda', 'mrcc', 'nok', 'reporter', 'ambulance', 'fire', 'helicopter', 'rnli', 'unit', 'other'];
+export const CONTACT_ROLE_LABEL: Record<ContactRole, string> = {
+  garda: 'Gardaí', mrcc: 'MRCC / Coast Guard', ambulance: 'Ambulance', fire: 'Fire brigade', helicopter: 'Helicopter', rnli: 'RNLI', unit: 'Other unit',
+  nok: 'Next of kin', reporter: 'Reporting person', other: 'Other',
+};
+/** People rather than agencies: shown to managers only, never to crew or displays, and cleared by retention after the incident. */
+export const PRIVATE_CONTACT_ROLES: ContactRole[] = ['nok', 'reporter'];
+
+export interface StationContact {
+  id: number;
+  role: ContactRole;
+  name: string;
+  organisation?: string;
+  phone?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface IncidentContact {
+  id: number;
+  incidentId: string;
+  role: ContactRole;
+  name: string;
+  organisation?: string;
+  phone?: string;
+  /** Their reference for this incident: a Garda PULSE number, an MRCC incident number. */
+  reference?: string;
+  notes?: string;
+  directoryId?: number;
+  createdAt: string;
+  /** Set when retention has cleared a private contact's details. */
+  redactedAt?: string;
+}
+
+export interface ContactLogEntry {
+  id: number;
+  incidentId: string;
+  contactId?: number;
+  at: string;
+  /** in: they called us; out: we called them; note: anything else worth logging. */
+  direction: 'in' | 'out' | 'note';
+  text: string;
+  byUserId?: number;
+  byName?: string;
+}

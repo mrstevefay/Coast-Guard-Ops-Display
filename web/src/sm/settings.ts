@@ -3,14 +3,14 @@
  * Everything the crew app offers under More → Admin, plus the admin-only API
  * (backups, retention, audit log) that had no UI, laid out for a laptop.
  */
-import type { DevicePublic, ProviderHealth, Role, TerrainStatus, UserPublic } from '../../../shared/types';
+import { CONTACT_ROLES, CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type DevicePublic, type ProviderHealth, type Role, type StationContact, type TerrainStatus, type UserPublic } from '../../../shared/types';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { esc } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, modal } from './modal';
 import { cs } from './state';
 
-export type SettingsSection = 'users' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
+export type SettingsSection = 'users' | 'contacts' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
 
 interface FeedSetting { key: string; label: string; help: string; provider: string; env?: string; secret: boolean; kind: 'text' | 'url'; source: 'ui' | 'env' | 'config' | 'none'; value: string; isSet: boolean }
 
@@ -22,6 +22,7 @@ interface Health { status: string; mode: string; uptimeSec: number; db: string; 
 
 const SECTIONS: { id: SettingsSection; label: string; adminOnly: boolean }[] = [
   { id: 'users', label: 'Users', adminOnly: false },
+  { id: 'contacts', label: 'Station contacts', adminOnly: false },
   { id: 'displays', label: 'Display keys', adminOnly: true },
   { id: 'feeds', label: 'Data feeds', adminOnly: true },
   { id: 'backups', label: 'Backups & retention', adminOnly: true },
@@ -64,7 +65,7 @@ export function renderSettings(root: HTMLElement, force = false): void {
     <div class="set-body" id="set-body"><div id="set-reveal">${reveals.get(section) ?? ''}</div><div id="set-main"><p class="muted">Loading…</p></div></div>`;
   root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => (location.hash = `#settings/${b.dataset.section}`)));
   const main = root.querySelector<HTMLElement>('#set-main')!;
-  const render = { users: usersSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, terrain: terrainSection, audit: auditSection, system: systemSection, account: accountSection }[section];
+  const render = { users: usersSection, contacts: contactsSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, terrain: terrainSection, audit: auditSection, system: systemSection, account: accountSection }[section];
   if (!allowed.some((s) => s.id === section)) main.innerHTML = '<p class="muted">Admins only.</p>';
   else render(main).catch((e) => (main.innerHTML = `<p class="note error">${esc(msg(e))}</p>`));
 }
@@ -159,6 +160,41 @@ async function displaysSection(el: HTMLElement): Promise<void> {
     });
     wire(el, {
       del: (b) => confirmModal(`Delete key “${esc(b.dataset.label ?? '')}”?`, 'The TV using it loses access immediately.', 'Delete', async () => { await del(`/api/admin/display-keys/${b.dataset.id}`); await load(); }, true),
+    });
+  };
+  await load();
+}
+
+// ------------------------------------------------------------------ station contacts
+/** Standing contacts (Garda station, MRCC, ambulance, other units) that a manager adds to an incident in one click. */
+async function contactsSection(el: HTMLElement): Promise<void> {
+  const roles = CONTACT_ROLES.filter((r) => !PRIVATE_CONTACT_ROLES.includes(r));
+  const load = async () => {
+    const { contacts } = await get<{ contacts: StationContact[] }>('/api/contacts');
+    el.innerHTML = `<div class="set-head"><h2>Station contacts</h2></div>
+      <p class="muted">Agencies and units you call on most taskings. On an incident, add one in a click from the Contacts panel, then type the name of the person you spoke to and their reference. Next of kin are only ever added to an incident.</p>
+      <form class="set-form" id="dir-form">
+        <label>Role <select name="role">${roles.map((r) => `<option value="${r}">${esc(CONTACT_ROLE_LABEL[r])}</option>`).join('')}</select></label>
+        <label>Name <input name="name" required maxlength="120" placeholder="e.g. Howth Garda Station" /></label>
+        <label>Organisation <input name="organisation" maxlength="120" placeholder="e.g. An Garda Síochána" /></label>
+        <label>Phone <input name="phone" maxlength="40" inputmode="tel" /></label>
+        <button class="btn-sm primary" type="submit">+ Add</button>
+      </form>
+      <table class="set-table"><thead><tr><th>Role</th><th>Name</th><th>Organisation</th><th>Phone</th><th></th></tr></thead><tbody>
+      ${contacts.map((c) => `<tr data-id="${c.id}"><td>${esc(CONTACT_ROLE_LABEL[c.role])}</td><td><input class="inline-edit" data-field="name" value="${esc(c.name)}" maxlength="120" /></td><td><input class="inline-edit" data-field="organisation" value="${esc(c.organisation ?? '')}" maxlength="120" /></td><td><input class="inline-edit" data-field="phone" value="${esc(c.phone ?? '')}" maxlength="40" inputmode="tel" /></td><td class="acts"><button class="mini danger" data-act="del" data-id="${c.id}" data-label="${esc(c.name)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No station contacts yet.</td></tr>'}
+      </tbody></table>
+      <p class="muted small">Edits save when you leave the field.</p>`;
+    el.querySelector<HTMLFormElement>('#dir-form')!.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = Object.fromEntries(new FormData(ev.target as HTMLFormElement)) as Record<string, string>;
+      run(async () => { await post('/api/contacts', f); toast(`${f.name} added`); }, load);
+    });
+    el.querySelectorAll<HTMLInputElement>('.inline-edit').forEach((i) => i.addEventListener('change', () => {
+      const id = i.closest<HTMLElement>('tr')!.dataset.id;
+      run(async () => { await patch(`/api/contacts/${id}`, { [i.dataset.field!]: i.value }); toast('Saved'); });
+    }));
+    wire(el, {
+      del: (b) => confirmModal(`Remove “${esc(b.dataset.label ?? '')}”?`, 'Incidents that used it keep their copy.', 'Remove', async () => { await del(`/api/contacts/${b.dataset.id}`); await load(); }, true),
     });
   };
   await load();

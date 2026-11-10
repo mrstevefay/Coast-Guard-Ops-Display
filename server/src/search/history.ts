@@ -1,4 +1,4 @@
-import { FIND_LABEL, type FindType } from '../../../shared/types.js';
+import { CONTACT_ROLE_LABEL, FIND_LABEL, type ContactRole, type FindType } from '../../../shared/types.js';
 import type { ConditionsSnapshot, DashboardData, IncidentReplay, IncidentSummary, ReplayEvent, ReplayFix, TeamMembership } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import { now, type Db } from '../db/index.js';
@@ -121,6 +121,13 @@ export function eventsFor(db: Db, incidentId: string, users: Users): ReplayEvent
       'subject.photo': `${actor} added a subject photo`,
     }[a.action];
     if (text) events.push({ at: a.at, kind: a.action.split('.')[0], text });
+  }
+  // the call log, from its own table so retention's clearing shows here too
+  for (const c of db.all<{ at: string; direction: string; text: string; by_user: number | null; name: string | null; role: ContactRole | null }>(
+    'SELECT l.at, l.direction, l.text, l.by_user, c.name, c.role FROM contact_log l LEFT JOIN incident_contacts c ON c.id = l.contact_id WHERE l.incident_id = ? ORDER BY l.at', incidentId)) {
+    const them = c.name ? `${c.name}${c.role ? ` (${CONTACT_ROLE_LABEL[c.role]})` : ''}` : '';
+    const lead = c.direction === 'in' ? `${who(c.by_user)} took a call${them ? ` from ${them}` : ''}` : c.direction === 'out' ? `${who(c.by_user)} called${them ? ` ${them}` : ''}` : `${who(c.by_user)} noted${them ? ` (${them})` : ''}`;
+    events.push({ at: c.at, kind: 'contact', text: `${lead}: ${c.text}` });
   }
   return events.sort((x, y) => x.at.localeCompare(y.at));
 }

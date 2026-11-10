@@ -11,6 +11,7 @@ import { validateGeometry } from './geometry.js';
 import { listSummaries, replayParts, snapshotConditions } from './history.js';
 import { buildReport, renderReportHtml, type IncidentReport } from './report.js';
 import { Points } from './points.js';
+import { Contacts } from './contacts.js';
 import { Subjects } from './subject.js';
 import type { TrackContext, Tracking } from './tracking.js';
 
@@ -32,6 +33,7 @@ const TARGET_STATUSES: TargetStatus[] = ['planned', 'assigned', 'in-progress', '
 export class SearchService extends EventEmitter implements TrackContext {
   readonly subjects: Subjects;
   readonly points: Points;
+  readonly contacts: Contacts;
 
   constructor(
     private readonly db: Db,
@@ -43,6 +45,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     super();
     this.subjects = new Subjects(db, path.join(cfg.server.dataDir, 'subjects'));
     this.points = new Points(db);
+    this.contacts = new Contacts(db);
     store.on('mode', (m: ModeState, prev: ModeState) => this.onMode(m, prev));
     tracking.on('fix', () => this.touchMuster());
     this.reconcile(store.getMode());
@@ -162,6 +165,11 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   /** Subject details changed: bump the snapshot so phones refetch. */
+  /** Contacts or the call log changed: push a snapshot so other consoles refetch them. */
+  contactsChanged(): void {
+    this.changed();
+  }
+
   subjectChanged(): void {
     this.changed();
   }
@@ -221,7 +229,7 @@ export class SearchService extends EventEmitter implements TrackContext {
 
   reportHtml(incidentId: string): string | undefined {
     const r = this.report(incidentId);
-    return r ? renderReportHtml(r.report, r.replay, this.cfg.station) : undefined;
+    return r ? renderReportHtml(r.report, r.replay, this.cfg.station, this.contacts.list(incidentId)) : undefined;
   }
 
   responders(incidentId: string): ResponderRow[] {
@@ -449,6 +457,8 @@ export class SearchService extends EventEmitter implements TrackContext {
     }
     const incident = toIncident(inc, this.subjects, this.points);
     if (forDisplay) incident.points = incident.points?.filter((p) => !PRIVATE_POINT_KINDS.includes(p.kind));
+    // contacts never travel in the snapshot: managers fetch them, and this tells them when to
+    else incident.contactsRev = this.db.get<{ r: string }>("SELECT (SELECT COUNT(*) || '.' || COALESCE(MAX(id), 0) FROM incident_contacts WHERE incident_id = ?) || ':' || (SELECT COUNT(*) FROM contact_log WHERE incident_id = ?) AS r", inc.id, inc.id)?.r;
     return { incident, responders: this.responders(inc.id), teams: this.teams(inc.id), targets: this.targets(inc.id), latest, updatedAt: now() };
   }
 

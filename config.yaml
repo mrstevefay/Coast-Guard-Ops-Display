@@ -72,6 +72,8 @@ retention:
   auditYears: 2
   # Nightly SQLite backups to keep in data/backups.
   backupKeep: 14
+  # Days after an incident closes before next of kin and reporting person details are cleared.
+  privateContactDays: 30
 
 upstream:
   # Pi only: mirror the hosted server for the kiosk. Env: UPSTREAM_URL / UPSTREAM_KEY

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Incident contacts** (backlog item 7). A Contacts panel on the console holds the agencies and people involved in an incident: Gardaí, MRCC, ambulance, fire, helicopter, RNLI, other units, next of kin and the reporting person. Each has a phone number with tap-to-call and copy, their reference (such as a PULSE number) and notes.
+  - **Station directory:** standing contacts are kept under Settings → Station contacts and added to an incident in one click.
+  - **Call log:** each entry records direction (called them, they called, note), the contact and what was said. It goes into the history timeline and the report.
+  - **Privacy:** managers only; never in the snapshot, on crew phones or on the TV, which receives only a change counter. Every read is audited, and the call text stays out of the audit log. The report shows next of kin by name only.
+  - **Retention:** next of kin and reporting-person details, and the call notes about them, are cleared `retention.privateContactDays` after the incident closes (default 30).
+  - Migration 8 adds the tables.
 - **UX phase 3: stages on the console, crew report from the field.**
   - **Console:** three tabs in working order: 1 Subject (points, then who), 2 Plan, 3 Teams (waiting responders, team cards, all targets). The draw tools moved onto the map toolbar, and the map search box sits under it.
   - **Console map:** clicking a segment opens a card to assign it, and clicking a target opens a card to reassign it or edit its shape. Hovering a segment or target row outlines it in cyan.
