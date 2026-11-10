@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { PRIVATE_POINT_KINDS } from '../../../shared/types.js';
+import { FIND_LABEL, FIND_TYPES, PRIVATE_POINT_KINDS, type FindType } from '../../../shared/types.js';
 import type { Fix, IncidentKind, IncidentReplay, IncidentSummary, ModeState, MusterState, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import type { AppConfig } from '../config.js';
@@ -461,6 +461,39 @@ export class SearchService extends EventEmitter implements TrackContext {
     const resp = this.db.get<{ status: ResponseStatus }>('SELECT status FROM responses WHERE incident_id = ? AND user_id = ?', inc.id, userId);
     if (resp && (resp.status === 'responding' || resp.status === 'on-scene')) return { incidentId: inc.id };
     return undefined;
+  }
+
+  // ------------------------------------------------------------ crew in the field
+  /**
+   * A crew member reports a find. Where no position is given, their phone's last fix is used.
+   * It becomes a 'find' planning point labelled with what was found and who found it.
+   */
+  reportFind(incidentId: string, userId: number, input: { type?: string; note?: string; lat?: number; lon?: number }) {
+    const open = this.requireOpen(incidentId);
+    const type = input.type as FindType;
+    if (!FIND_TYPES.includes(type)) throw new Error('type must be subject, sighting, item or clue');
+    if (!this.current(userId)) throw new Error('only crew responding to this incident can report a find');
+    let lat = finite(input.lat), lon = finite(input.lon);
+    if (lat === null || lon === null) {
+      const fix = this.tracking.all().find((f) => f.userId === userId);
+      if (!fix) throw new Error('no position: allow location on this phone, or check OwnTracks is sending');
+      lat = fix.lat;
+      lon = fix.lon;
+    }
+    const who = this.memberIndex(open.id).get(userId)?.callsign ?? this.users.byId(userId)?.name ?? 'crew';
+    const p = this.points.add(open.id, { kind: 'find', label: `${FIND_LABEL[type]} · ${who}`, note: input.note ?? null, lat, lon }, userId);
+    this.changed();
+    return p;
+  }
+
+  /** A crew member starts or finishes their own team's target. Only members of that team may. */
+  crewTargetProgress(targetId: number, userId: number, status: string): Target {
+    const t = this.target(targetId);
+    if (!t) throw new Error('target not found');
+    if (status !== 'in-progress' && status !== 'done') throw new Error('status must be in-progress or done');
+    const mine = t.teamId ? this.memberIndex(this.db.get<{ incident_id: string }>('SELECT incident_id FROM targets WHERE id = ?', targetId)!.incident_id).get(userId)?.teamId === t.teamId : false;
+    if (!mine) throw Object.assign(new Error('this target is not your team’s'), { code: 'FORBIDDEN' });
+    return this.updateTarget(targetId, { status: status as TargetStatus });
   }
 
   // ------------------------------------------------------------ muster bridge

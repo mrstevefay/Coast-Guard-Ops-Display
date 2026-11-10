@@ -19,12 +19,22 @@ export function statusBadge(status: string): string {
   return `<span class="badge-s ${cls}">${esc(status.replace('-', ' '))}</span>`;
 }
 
-/** Delegate clicks on [data-action] within root to handlers. */
-export function wireActions(root: HTMLElement, handlers: Record<string, (el: HTMLElement, ev: Event) => void | Promise<void>>): void {
+type ActionHandler = (el: HTMLElement, ev: Event) => void | Promise<void>;
+const HANDLERS = new WeakMap<HTMLElement, Record<string, ActionHandler>>();
+
+/**
+ * Delegate clicks on [data-action] within root to handlers. Pages re-render into the same root
+ * on every update, so this attaches one listener per root and only refreshes the handler table:
+ * one tap runs one handler once, however many times the page has been drawn.
+ */
+export function wireActions(root: HTMLElement, handlers: Record<string, ActionHandler>): void {
+  const had = HANDLERS.has(root);
+  HANDLERS.set(root, { ...(HANDLERS.get(root) ?? {}), ...handlers });
+  if (had) return;
   root.addEventListener('click', (ev) => {
     const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!el || !root.contains(el)) return;
-    const h = handlers[el.dataset.action!];
+    const h = HANDLERS.get(root)?.[el.dataset.action!];
     if (!h) return;
     ev.preventDefault();
     const p = h(el, ev);

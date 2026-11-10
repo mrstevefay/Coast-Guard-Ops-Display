@@ -351,6 +351,34 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     }
   });
 
+  // ---------------------------------------------------------- crew in the field
+  /** A team member starts or finishes their own team's target (the console sees it at once). */
+  app.post<{ Params: { id: string }; Body: { status?: string } }>('/api/targets/:id/progress', { preHandler: member }, async (req, reply) => {
+    const p = req.principal!;
+    if (p.kind !== 'user') return bad(reply, 'forbidden', 403);
+    try {
+      const target = search.crewTargetProgress(Number(req.params.id), p.userId, String(req.body?.status ?? ''));
+      audit.log(p, req.ip, 'target.updated', { type: 'target', id: target.id }, { status: target.status, by: 'crew' });
+      return { target };
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      return bad(reply, e, code === 'FORBIDDEN' ? 403 : /not found/.test(String((e as Error).message)) ? 404 : 400);
+    }
+  });
+
+  /** A crew member reports a find: the subject, a sighting, an item or a clue, at their position. */
+  app.post<{ Params: { id: string }; Body: { type?: string; note?: string; lat?: number; lon?: number } }>('/api/incidents/:id/finds', { preHandler: member }, async (req, reply) => {
+    const p = req.principal!;
+    if (p.kind !== 'user') return bad(reply, 'forbidden', 403);
+    try {
+      const point = search.reportFind(req.params.id, p.userId, req.body ?? {});
+      audit.log(p, req.ip, 'point.set', { type: 'incident', id: req.params.id }, { pointId: point.id, kind: 'find', find: req.body?.type, lat: Math.round(point.lat * 1e5) / 1e5, lon: Math.round(point.lon * 1e5) / 1e5 });
+      return { point };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
   app.delete<{ Params: { id: string } }>('/api/targets/:id', { preHandler: manager }, async (req, reply) => {
     try {
       search.deleteTarget(Number(req.params.id));

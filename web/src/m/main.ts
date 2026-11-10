@@ -5,7 +5,7 @@ import { get, setUnauthorisedHandler } from '../api';
 import { fmtDurationMin, fmtElapsed } from '../format';
 import { WsClient } from '../ws';
 import { renderAdmin } from './pages/admin';
-import { renderSaf, renderTidePage, renderWeather } from './pages/feeds';
+import { renderConditions } from './pages/feeds';
 import { renderLogin } from './pages/login';
 import { leaveMapPage, renderMapPage } from './pages/map';
 import { renderDevicePage, renderMore, renderPassword, renderPrivacy } from './pages/profile';
@@ -22,10 +22,9 @@ let currentPage: Route | undefined;
 
 const TABS: [Route, string][] = [
   ['status', 'Status'],
-  ['weather', 'Weather'],
-  ['tide', 'Tide'],
   ['map', 'Map'],
   ['team', 'Team'],
+  ['conditions', 'Conditions'],
   ['more', 'More'],
 ];
 
@@ -69,7 +68,9 @@ function start(): void {
   tracking.prepare().catch(() => {});
   store.subscribe(() => {
     renderHeader();
-    if (currentPage && ['status', 'weather', 'tide', 'saf', 'team'].includes(currentPage)) render(currentRoute(), true);
+    // never redraw under someone typing (a find note, a form): the next update after they leave the field will
+    const typing = document.activeElement?.matches('#page textarea, #page input:not([type=checkbox]):not([type=radio])');
+    if (!typing && currentPage && ['status', 'conditions', 'team'].includes(currentPage)) render(currentRoute(), true);
   });
   render(currentRoute());
 }
@@ -111,13 +112,14 @@ function render(m: ReturnType<typeof currentRoute>, soft = false): void {
   if (soft && route !== currentPage) return; // a soft re-render never changes page
   if (currentPage === 'map' && route !== 'map') leaveMapPage();
   currentPage = route;
-  document.querySelectorAll<HTMLElement>('.tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === route || (route === 'saf' && a.dataset.tab === 'weather') || (['profile', 'admin', 'privacy', 'password', 'device'].includes(route) && a.dataset.tab === 'more')));
+  document.querySelectorAll<HTMLElement>('.tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === route || (['weather', 'tide', 'saf'].includes(route) && a.dataset.tab === 'conditions') || (['profile', 'admin', 'privacy', 'password', 'device'].includes(route) && a.dataset.tab === 'more')));
   page.scrollTop = 0;
   switch (route) {
     case 'status': return renderStatus(page);
-    case 'weather': return renderWeather(page);
-    case 'tide': return renderTidePage(page);
-    case 'saf': return renderSaf(page);
+    case 'conditions':
+    case 'weather':
+    case 'tide':
+    case 'saf': return renderConditions(page, route);
     case 'map': return renderMapPage(page);
     case 'team': return renderTeam(page);
     case 'more':
@@ -136,15 +138,6 @@ setInterval(() => {
   document.querySelectorAll<HTMLElement>('[data-elapsed]').forEach((el) => (el.textContent = fmtElapsed(now - Date.parse(el.dataset.elapsed!))));
   document.querySelectorAll<HTMLElement>('[data-countdown]').forEach((el) => (el.textContent = fmtDurationMin((Date.parse(el.dataset.countdown!) - now) / 60_000)));
 }, 1000);
-
-// Weather tab also hosts the Sea Area Forecast page via a sub-link.
-document.addEventListener('click', (ev) => {
-  const a = (ev.target as HTMLElement).closest<HTMLAnchorElement>('a[data-tab]');
-  if (a && a.dataset.tab === 'weather' && currentPage === 'weather') {
-    ev.preventDefault();
-    navigate('saf');
-  }
-});
 
 // PWA service worker (crew app only)
 if ('serviceWorker' in navigator && location.pathname.startsWith('/m')) {

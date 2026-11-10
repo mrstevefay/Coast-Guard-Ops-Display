@@ -247,9 +247,9 @@ select, input[type='text'], input[type='number'], input[type='search'], input:no
 .pt-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid var(--line); }
 .pt-row .grow { flex: 1; min-width: 0; } .pt-row .pt-note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-kind { display: inline-block; min-width: 34px; text-align: center; font-size: 10px; font-weight: 800; border-radius: 4px; padding: 1px 4px; background: #94a3b8; color: #111; }
-.pt-row.k-lkp .pt-kind { background: var(--yellow); } .pt-row.k-pls .pt-kind { background: #fb923c; } .pt-row.k-significant .pt-kind { background: #f472b6; } .pt-row.k-vehicle .pt-kind { background: #60a5fa; }
+.pt-row.k-lkp .pt-kind { background: var(--yellow); } .pt-row.k-pls .pt-kind { background: #fb923c; } .pt-row.k-significant .pt-kind { background: #f472b6; } .pt-row.k-vehicle .pt-kind { background: #60a5fa; } .pt-row.k-find .pt-kind { background: #ef4444; color: #fff; }
 .map-label-pt { color: #111; background: #cbd5e1; padding: 1px 5px; border-radius: 4px; text-shadow: none; font-size: 12px; }
-.map-label-pt.k-pls { background: #fb923c; } .map-label-pt.k-significant { background: #f472b6; } .map-label-pt.k-vehicle { background: #60a5fa; } .map-label-pt.k-home { background: #94a3b8; }
+.map-label-pt.k-pls { background: #fb923c; } .map-label-pt.k-significant { background: #f472b6; } .map-label-pt.k-vehicle { background: #60a5fa; } .map-label-pt.k-home { background: #94a3b8; } .map-label-pt.k-find { background: #ef4444; color: #fff; }
 .lpb .src.terrain { color: #fbbf24; border-color: #fbbf24; }
 .lpb-terrain { border-left: 3px solid #fbbf24; padding-left: 6px; margin: 4px 0; }
 .map-label-seg { color: #111; background: rgba(255,255,255,0.9); padding: 0 5px; border-radius: 4px; text-shadow: none; font-size: 11px; font-weight: 800; }
@@ -281,7 +281,7 @@ input[type='file']::file-selector-button { background: var(--panel-2, #1c2733); 
 
 /* ---- UX phase 2 ---- */
 .confirm-text { margin: 0 0 14px; font-size: 14px; line-height: 1.45; max-width: 44ch; }
-.map-search { position: absolute; top: 10px; left: 300px; z-index: 3; width: min(320px, calc(100% - 380px)); }
+.map-search { position: absolute; top: 54px; left: 10px; z-index: 3; width: min(320px, calc(100% - 80px)); }
 .map-search input { width: 100%; box-sizing: border-box; background: rgba(20, 28, 38, 0.95); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--fg); }
 .map-search input:focus, .loc-wrap input:focus { outline: none; border-color: var(--accent); }
 .map-search, .loc-wrap { position: relative; }
@@ -328,3 +328,21 @@ input[type='file']::file-selector-button { background: var(--panel-2, #1c2733); 
 #cat-more.on { border-color: var(--accent); color: var(--accent); }
 .subject-more > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin: 4px 0; }
 .subject-more { display: grid; gap: 8px; }
+
+/* ---- UX phase 3 ---- */
+.tabs-sm .tab-n.amber { background: var(--amber); color: #111; }
+.pad-k { padding: 10px 12px 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.pad-x { padding: 0 12px; }
+#points-host .points-bar { margin: 0 8px 4px; }
+.lp-sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+.shape-card { display: grid; gap: 6px; font-size: 13px; width: 240px; }
+.shape-card select { width: 100%; }
+.shape-card .sc-row { display: flex; gap: 6px; }
+.shape-card .sc-row select { flex: 1; min-width: 0; }
+.find-alerts { position: absolute; right: 56px; top: 10px; z-index: 5; display: grid; gap: 8px; width: 300px; }
+.find-alert { background: rgba(20, 28, 38, 0.97); border: 2px solid var(--amber); border-radius: 10px; padding: 10px 12px; font-size: 13px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); display: grid; gap: 4px; }
+.find-alert.subject { border-color: var(--red, #ef4444); animation: find-pulse 1.2s ease-in-out 3; }
+.find-alert b { font-size: 14px; }
+.find-alert .fa-actions { display: flex; gap: 6px; margin-top: 4px; }
+@keyframes find-pulse { 50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.35); } }
+@media (prefers-reduced-motion: reduce) { .find-alert.subject { animation: none; } }

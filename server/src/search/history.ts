@@ -1,3 +1,4 @@
+import { FIND_LABEL, type FindType } from '../../../shared/types.js';
 import type { ConditionsSnapshot, DashboardData, IncidentReplay, IncidentSummary, ReplayEvent, ReplayFix, TeamMembership } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import { now, type Db } from '../db/index.js';
@@ -107,14 +108,14 @@ export function eventsFor(db: Db, incidentId: string, users: Users): ReplayEvent
       'callout.started': `Callout received`,
       'callout.standdown': `Stand down`,
       'incident.ipp': d.cleared ? `${actor} cleared the planning point` : `${actor} set the planning point`,
-      'point.set': `${actor} set a ${String(d.kind ?? 'point').toUpperCase()} point`,
+      'point.set': d.kind === 'find' ? `${actor} reported a find: ${FIND_LABEL[d.find as FindType] ?? 'find'}` : `${actor} set a ${String(d.kind ?? 'point').toUpperCase()} point`,
       'point.deleted': `${actor} removed a ${String(d.kind ?? 'point').toUpperCase()} point`,
       'team.created': `${actor} created team ${d.name ?? t}`,
       'team.updated': `${actor} updated team ${t}${d.searchWidthM ? ` (sweep ${d.searchWidthM} m)` : ''}${d.status ? ` → ${d.status}` : ''}`,
       'team.members': `${actor} set ${t} members`,
       'team.deleted': `${actor} deleted team ${t}`,
       'target.created': `${actor} created target ${d.name ?? t} (${d.kind ?? ''})`,
-      'target.updated': `${actor} updated target ${t}${d.status ? ` → ${d.status}` : ''}`,
+      'target.updated': d.by === 'crew' ? `${actor} ${d.status === 'done' ? 'finished searching' : 'started searching'} ${t}` : `${actor} updated target ${t}${d.status ? ` → ${d.status}` : ''}`,
       'target.deleted': `${actor} deleted target ${t}`,
       'subject.updated': `${actor} updated subject details`,
       'subject.photo': `${actor} added a subject photo`,

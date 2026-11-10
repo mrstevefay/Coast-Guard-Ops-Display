@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **UX phase 3: stages on the console, crew report from the field.**
+  - **Console:** three tabs in working order: 1 Subject (points, then who), 2 Plan, 3 Teams (waiting responders, team cards, all targets). The draw tools moved onto the map toolbar, and the map search box sits under it.
+  - **Console map:** clicking a segment opens a card to assign it, and clicking a target opens a card to reassign it or edit its shape. Hovering a segment or target row outlines it in cyan.
+  - **Crew, in the field:** a team's members start and finish their own target (`POST /api/targets/:id/progress`), and report a find, which can be the subject, a sighting, an item or a clue (`POST /api/incidents/:id/finds`). A find is placed at the phone's position, falling back to the last OwnTracks fix. It becomes a `find` point (migration 7), is announced on the console with Show and OK, and is kept off display keys. Both appear in the history timeline.
+  - **Crew app:** five tabs, with Weather and Tide merged into Conditions, which includes the folded sea area forecast; old links still work. The map is full screen, opens on the member's target, and has a strip with Navigate.
+  - **Fixes:** the crew app added another click listener on every redraw, so one tap could send several requests. Each page now has a single listener. Redraws also wait while someone is typing in the crew app.
 - **UX phase 2: fewer clicks and less typing.**
   - **Positions:** one box on the map, and in New tasking, reads decimal degrees, degrees and minutes, DMS, ITM and Irish Grid references (shared/location.ts, checked against PROJ to 3 m). Anything else searches about 23,000 named places, roads and paths that the terrain build now writes to `places.json` (`GET /api/places`). Eircodes need a licensed lookup and are not supported.
   - **Points:** the browser prompt is replaced by a label box on the map, with kind, label and note, saved with Enter. Kinds are added with **+** buttons instead of a dropdown.

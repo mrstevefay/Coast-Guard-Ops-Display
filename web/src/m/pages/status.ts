@@ -1,7 +1,7 @@
-import { POINT_KIND_LABEL } from '../../../../shared/types';
+import { FIND_LABEL, FIND_TYPES, POINT_KIND_LABEL, type FindType } from '../../../../shared/types';
 import { profileBySlug } from '../../../../shared/lpb/index';
 import type { IncidentSubject, ResponseStatus, SearchIncident } from '../../../../shared/types';
-import { get, put } from '../../api';
+import { get, post, put } from '../../api';
 import { bearingDeg, distanceM, esc, fmtDistance, fmtTime } from '../../format';
 import { anchorOf } from '../../map';
 import { renderWarnings } from '../../panels/warnings';
@@ -61,6 +61,17 @@ function subjectCard(inc: SearchIncident): string {
   </details>`;
 }
 
+/** Report-a-find form state; kept across re-renders. */
+let findOpen = false;
+let findType: FindType | undefined;
+let findNote = '';
+
+/** The phone's own position for a find, if the browser gives it within a few seconds; the server falls back to the last OwnTracks fix. */
+function phonePosition(): Promise<{ lat: number; lon: number } | undefined> {
+  if (!navigator.geolocation) return Promise.resolve(undefined);
+  return new Promise((resolve) => navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }), () => resolve(undefined), { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }));
+}
+
 /** Opens the phone's maps app with directions (Google Maps link: works on iPhone and Android). */
 const navLink = (lat: number, lon: number) => `<a class="btn small nav" href="https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}" target="_blank" rel="noopener">Navigate</a>`;
 
@@ -116,8 +127,12 @@ export function renderStatus(root: HTMLElement): void {
     targetCard = targets.length
       ? `<section class="card my-target" style="--team:${esc(team.colour)}"><div class="k">${targets.length > 1 ? 'YOUR TARGETS' : 'YOUR TARGET'}</div>${targets.map((t) => {
           const [lon, lat] = anchorOf(t.geometry);
-          return `<div class="target-row"><div><b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : 'grey'}">${esc(t.status)}</span></div>${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}${place(lat, lon)}</div>`;
-        }).join('')}<div class="muted small">Sweep ${team.searchWidthM} m each side</div></section>`
+          const step = t.status === 'in-progress'
+            ? `<button class="btn primary wide" data-action="target-step" data-id="${t.id}" data-status="done">AREA SEARCHED</button>`
+            : `<button class="btn primary wide" data-action="target-step" data-id="${t.id}" data-status="in-progress">START SEARCH</button>`;
+          return `<div class="target-row"><div><b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : 'grey'}">${t.status === 'in-progress' ? 'searching' : esc(t.status)}</span></div>${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}${place(lat, lon)}${step}</div>`;
+        }).join('')}<div class="muted small">Sweep ${team.searchWidthM} m each side</div>
+        <button class="btn ghost wide" data-action="find-open">Report a find</button></section>`
       : '';
     teamCard = `<section class="card team-mine" style="--team:${esc(team.colour)}">
         <div class="team-line"><span class="callsign">${esc(member.callsign)}</span><span class="muted">Team ${esc(team.name)}${member.position === 0 ? ' · leader' : ''}</span></div>
@@ -130,12 +145,22 @@ export function renderStatus(root: HTMLElement): void {
   const noFix = !myFix && !tracking.needsSetup && answered ? note(tracking.linked ? 'Your position is not being received yet. Open OwnTracks and tap Publish; check location is allowed Always.' : 'Your position is not being received. Set up OwnTracks under More → Phones.', 'warn') : '';
   const setup = tracking.needsSetup ? setupCard() : '';
 
+  const findCard = findOpen ? `<section class="card find-card"><h2>Report a find</h2>
+      <div class="find-types">${FIND_TYPES.map((t) => `<button class="btn ${findType === t ? 'primary' : 'ghost'} ${t === 'subject' ? 'subject' : ''}" data-action="find-type" data-type="${t}">${esc(FIND_LABEL[t])}</button>`).join('')}</div>
+      <textarea id="find-note" rows="2" maxlength="500" placeholder="What, and anything the manager needs to know">${esc(findNote)}</textarea>
+      <p class="muted small">Sent with your phone's position${myFix ? '' : ' (allow location if asked)'}.</p>
+      <div class="btn-row"><button class="btn primary" data-action="find-send" ${findType ? '' : 'disabled'}>Send</button><button class="btn ghost" data-action="find-cancel">Cancel</button></div>
+    </section>` : '';
+  if (answered) html += findCard;
+  if (answered && !targetCard && !findOpen) html += `<section class="card"><button class="btn ghost wide" data-action="find-open">Report a find</button></section>`;
+
   // order by stage: alerted → responding → tasked
   if (!answered) html += incidentCard + respondCard + setup + subject + others;
   else if (targetCard) html += targetCard + teamCard + subject + respondCard + incidentCard + setup + noFix + others;
   else html += respondCard + setup + noFix + (teamCard || '') + subject + incidentCard + others;
 
   root.innerHTML = html;
+  root.querySelector<HTMLTextAreaElement>('#find-note')?.addEventListener('input', (ev) => { findNote = (ev.target as HTMLTextAreaElement).value; });
   root.querySelector<HTMLDetailsElement>('#subject-card')?.addEventListener('toggle', (ev) => {
     subjectOpen = (ev.target as HTMLDetailsElement).open;
     const more = root.querySelector('.subject-more');
@@ -147,6 +172,37 @@ export function renderStatus(root: HTMLElement): void {
     'on-scene': () => respond('on-scene'),
     'stand-down': () => respond('stood-down'),
     unavailable: () => respond('unavailable'),
+    'target-step': async (el) => {
+      (el as HTMLButtonElement).disabled = true;
+      await post(`/api/targets/${el.dataset.id}/progress`, { status: el.dataset.status });
+      toast(el.dataset.status === 'done' ? 'Area searched: the manager can see it' : 'Search started');
+    },
+    'find-open': () => { findOpen = true; findType = undefined; findNote = ''; store.notify(); window.scrollTo({ top: 0 }); },
+    'find-cancel': () => { findOpen = false; store.notify(); },
+    'find-type': (el) => {
+      // update the form in place: a redraw is held back while the note box has focus
+      findType = el.dataset.type as FindType;
+      root.querySelectorAll<HTMLElement>('[data-action=find-type]').forEach((b) => { const on = b.dataset.type === findType; b.classList.toggle('primary', on); b.classList.toggle('ghost', !on); });
+      const send = root.querySelector<HTMLButtonElement>('[data-action=find-send]');
+      if (send) send.disabled = false;
+    },
+    'find-send': async (el) => {
+      if (!findType) return;
+      const id = store.s.search?.incident?.id;
+      if (!id) return;
+      (el as HTMLButtonElement).disabled = true;
+      const note = root.querySelector<HTMLTextAreaElement>('#find-note')?.value ?? '';
+      const pos = await phonePosition();
+      try {
+        await post(`/api/incidents/${id}/finds`, { type: findType, note, lat: pos?.lat, lon: pos?.lon });
+        findOpen = false;
+        toast(`${FIND_LABEL[findType]} reported`);
+        store.notify();
+      } catch (e) {
+        (el as HTMLButtonElement).disabled = false;
+        throw e;
+      }
+    },
   });
   root.querySelectorAll<HTMLElement>('[data-action^="respond-eta:"]').forEach((el) => el.addEventListener('click', () => respond('responding', Number(el.dataset.action!.split(':')[1]))));
 

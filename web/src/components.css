@@ -187,4 +187,4 @@
 .chip.red { background: var(--red); color: #fff; border-color: var(--red); font-size: calc(18 * var(--u)); }
 .chip.amber { background: var(--amber); color: #111; border-color: var(--amber); font-size: calc(18 * var(--u)); }
 .map-label-pt { color: #111; background: #cbd5e1; padding: 1px 6px; border-radius: 4px; text-shadow: none; font-size: 12px; font-weight: 700; }
-.map-label-pt.k-pls { background: #fb923c; } .map-label-pt.k-significant { background: #f472b6; } .map-label-pt.k-vehicle { background: #60a5fa; } .map-label-pt.k-home { background: #94a3b8; }
+.map-label-pt.k-pls { background: #fb923c; } .map-label-pt.k-significant { background: #f472b6; } .map-label-pt.k-vehicle { background: #60a5fa; } .map-label-pt.k-home { background: #94a3b8; } .map-label-pt.k-find { background: #ef4444; color: #fff; }
