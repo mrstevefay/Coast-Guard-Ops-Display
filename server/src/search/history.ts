@@ -1,4 +1,4 @@
-import { CONTACT_ROLE_LABEL, FIND_LABEL, type ContactRole, type FindType } from '../../../shared/types.js';
+import { CONTACT_ROLE_LABEL, FIND_LABEL, OUTCOME_LABEL, type ContactRole, type FindType, type OutcomeKind } from '../../../shared/types.js';
 import type { ConditionsSnapshot, DashboardData, IncidentReplay, IncidentSummary, ReplayEvent, ReplayFix, TeamMembership } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import { now, type Db } from '../db/index.js';
@@ -115,7 +115,8 @@ export function eventsFor(db: Db, incidentId: string, users: Users): ReplayEvent
       'team.members': `${actor} set ${t} members`,
       'team.deleted': `${actor} deleted team ${t}`,
       'target.created': `${actor} created target ${d.name ?? t} (${d.kind ?? ''})`,
-      'target.updated': d.by === 'crew' ? `${actor} ${d.status === 'done' ? 'finished searching' : 'started searching'} ${t}` : `${actor} updated target ${t}${d.status ? ` → ${d.status}` : ''}`,
+      'target.updated': `${d.by === 'crew' ? `${actor} ${d.status === 'done' ? 'finished searching' : 'started searching'} ${t}` : `${actor} updated target ${t}${d.status ? ` → ${d.status}` : ''}`}${typeof d.pod === 'number' ? ` (POD ${Math.round(d.pod * 100)} %)` : ''}`,
+      'outcome.recorded': `${actor} recorded the outcome: ${OUTCOME_LABEL[d.outcome as OutcomeKind] ?? d.outcome}${typeof d.distanceKm === 'number' ? `, ${d.distanceKm} km from the planning point` : ''}`,
       'target.deleted': `${actor} deleted target ${t}`,
       'subject.updated': `${actor} updated subject details`,
       'subject.photo': `${actor} added a subject photo`,

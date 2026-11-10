@@ -1,4 +1,4 @@
-import { CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type IncidentContact } from '../../../shared/types.js';
+import { CONTACT_ROLE_LABEL, FOUND_BY_LABEL, OUTCOME_LABEL, PRIVATE_CONTACT_ROLES, type IncidentContact, type IncidentOutcome } from '../../../shared/types.js';
 import { LPB, buildPlan, profileBySlug } from '../../../shared/lpb/index.js';
 import { POINT_KIND_LABEL, POINT_KIND_SHORT } from '../../../shared/types.js';
 import type { ConditionsSnapshot, IncidentReplay, ReplayEvent, ReplayFix, SearchIncident, Target, TargetGeometry, Team, TeamMembership } from '../../../shared/types.js';
@@ -197,13 +197,14 @@ const fmtHM = (iso?: string) => (iso ? hm.format(new Date(iso)) : '—');
 const fmtMin = (m?: number) => (m === undefined ? '—' : m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min` : `${m} min`);
 const n = (v: number | undefined, unit = '', d = 0) => (v === undefined || v === null ? '—' : `${v.toFixed(d)}${unit}`);
 
-export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, station: { lat: number; lon: number; name: string }, contacts: IncidentContact[] = []): string {
+export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, station: { lat: number; lon: number; name: string }, contacts: IncidentContact[] = [], outcome?: IncidentOutcome): string {
   const inc = r.incident;
   // Agencies with their numbers and references; next of kin and the reporting person by name only.
   const contactsHtml = contacts.length ? `<h2>Contacts</h2><table><tr><th>Role</th><th>Name</th><th>Organisation</th><th>Phone</th><th>Reference</th></tr>${contacts.map((c) => {
     const priv = PRIVATE_CONTACT_ROLES.includes(c.role);
     return `<tr><td>${esc(CONTACT_ROLE_LABEL[c.role])}</td><td>${esc(c.name)}</td><td>${priv ? '' : esc(c.organisation ?? '')}</td><td>${priv ? '<span class="muted">not printed</span>' : esc(c.phone ?? '')}</td><td>${esc(c.reference ?? '')}</td></tr>`;
   }).join('')}</table><p class="muted small">Calls are in the timeline.</p>` : '';
+  const outcomeHtml = outcome ? `<h2>Outcome</h2><p><b>${esc(OUTCOME_LABEL[outcome.outcome])}</b>${outcome.foundAt ? ` at ${fmtHM(outcome.foundAt)}` : ''}${outcome.locationType ? `, ${esc(outcome.locationType.toLowerCase())}` : ''}${outcome.distanceKm !== undefined ? `, ${outcome.distanceKm} km from the planning point` : ''}${outcome.foundBy ? `. Found by: ${esc(FOUND_BY_LABEL[outcome.foundBy])}` : ''}.</p>${outcome.notes ? `<p>${esc(outcome.notes)}</p>` : ''}` : '<h2>Outcome</h2><p class="muted">Not recorded.</p>';
   const title = `${inc.kind === 'tasking' ? 'Tasking' : 'Callout'} report — ${fmtDT(inc.startedAt)}`;
   const cond = (c: ConditionsSnapshot) => `<table class="kv">
       <tr><th>Recorded</th><td>${fmtDT(c.at)} (${c.phase})</td></tr>
@@ -254,6 +255,7 @@ export function renderReportHtml(r: IncidentReport, replay: IncidentReplay, stat
 </div>
 ${inc.lat !== undefined && inc.lon !== undefined ? `<p><b>Incident position:</b> ${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)}</p>` : ''}
 ${inc.points?.length ? `<p><b>Planning points:</b> ${inc.points.map((p) => `${esc(POINT_KIND_LABEL[p.kind])}${p.label ? ` "${esc(p.label)}"` : ''} ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)} (${fmtHM(p.setAt)})`).join('; ')}.</p>` : inc.ipp ? `<p><b>Planning point:</b> ${esc(inc.ipp.label ?? 'IPP')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)} (set ${fmtHM(inc.ipp.setAt)})</p>` : ''}
+${outcomeHtml}
 ${subject}
 ${contactsHtml}
 ${behaviour}

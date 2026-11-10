@@ -1,6 +1,8 @@
 import { LPB, LPB_GROUPS, LPB_TERRAINS, buildPlan, outcomeShares, profileBySlug, suggestProfile, terrainsWithData, type Basis, type PlanRing, type SearchPlan, type Tactic } from '../../../shared/lpb/index';
 import { MANAGER_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentSubject, type SearchAreaResult, type SearchSegment, type PlanningPointKind, type ResponderRow, type Target, type TargetStatus, type Team, type TeamStatus } from '../../../shared/types';
 import { del, get, patch, post, put } from '../api';
+import { updatePoa } from '../../../shared/searchtheory';
+import { askPod } from './pod';
 import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, confirmBox, modal } from './modal';
@@ -429,15 +431,32 @@ function terrainEvidence(): string {
 export const GROUND_NAME: Record<string, string> = { 'Open Ground': 'Open ground', 'Travel Aid': 'Roads and paths', 'Linear Feature': 'Streams and ditches', Trees: 'Woods and scrub', Water: "Water's edge", Habitation: 'Houses and gardens' };
 const ground = (d: string) => GROUND_NAME[d] ?? d;
 
+/** POA of each segment now, after the searches recorded so far (search theory: see shared/searchtheory.ts). */
+export function currentPoa(a: SearchAreaResult): Map<string, { basePct: number; nowPct: number; cumPod: number }> {
+  const segs = a.segments ?? [];
+  const searched = (cs.s.search?.targets ?? []).filter((t) => t.segmentId && t.status === 'done' && typeof t.pod === 'number').map((t) => ({ segmentId: t.segmentId!, pod: t.pod! }));
+  return new Map(updatePoa(segs.map((x) => ({ id: x.id, poaPct: x.poaPct })), searched, a.modelledPct ?? 100).map((x) => [x.id, x]));
+}
+
 function segmentsTable(a: SearchAreaResult): string {
   const segs = a.segments ?? [];
   if (!segs.length) return '';
   const teams = cs.s.search?.teams ?? [];
-  // a segment already made into a target (its name starts with the segment id)
   const taken = segmentsTaken();
-  const row = (s: SearchSegment) => `<tr><td><b>${esc(s.id)}</b></td><td class="small">${esc(ground(s.dominant))} · ${areaText(s.areaKm2)}</td><td class="num"><b class="amber">${s.poaPct} %</b></td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show on the map">◎</button>${taken.has(s.id) ? '<span class="muted small seg-added">Added</span>' : `<select class="seg-assign" data-seg-target="${esc(s.id)}" title="Make this an area target, for a team or for later"><option value="">Assign…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}${t.status === 'forming' ? '' : ` · ${esc(t.status)}`}</option>`).join('')}<option value="none">Target, no team yet</option></select>`}</td></tr>`;
-  const top = segs.slice(0, 5), rest = segs.slice(5);
+  const poa = currentPoa(a);
+  const anySearched = [...poa.values()].some((x) => x.cumPod > 0);
+  // highest probability now first: a searched segment drops down the list, the rest move up
+  const ordered = [...segs].sort((x, y) => (poa.get(y.id)?.nowPct ?? y.poaPct) - (poa.get(x.id)?.nowPct ?? x.poaPct));
+  const row = (s: SearchSegment) => {
+    const p = poa.get(s.id)!;
+    const changed = Math.abs(p.nowPct - p.basePct) >= 0.1;
+    const pct = changed ? `<span class="muted small was">${p.basePct}</span> <b class="amber">${p.nowPct} %</b>` : `<b class="amber">${s.poaPct} %</b>`;
+    const state = p.cumPod > 0 ? `<span class="badge-s green seg-searched" title="Cumulative probability of detection">searched ${Math.round(p.cumPod * 100)} %</span>` : taken.has(s.id) ? '<span class="muted small seg-added">Assigned</span>' : `<select class="seg-assign" data-seg-target="${esc(s.id)}" title="Make this an area target, for a team or for later"><option value="">Assign…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}${t.status === 'forming' ? '' : ` · ${esc(t.status)}`}</option>`).join('')}<option value="none">Target, no team yet</option></select>`;
+    return `<tr class="${p.cumPod > 0 ? 'searched' : ''}"><td><b>${esc(s.id)}</b></td><td class="small">${esc(ground(s.dominant))} · ${areaText(s.areaKm2)}</td><td class="num nowrap">${pct}</td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show on the map">◎</button>${state}</td></tr>`;
+  };
+  const top = ordered.slice(0, 5), rest = ordered.slice(5);
   return `<h4>Search segments <span class="src terrain" title="Probability of area: % of subjects in this category expected in each segment">POA</span></h4>
+    ${anySearched ? '<p class="small muted seg-note">Updated for the areas searched so far: their probability has moved to the rest.</p>' : ''}
     <table class="lpb-table seg-table"><tbody>${top.map(row).join('')}</tbody></table>
     ${rest.length ? `<details class="seg-more"><summary>Show all ${segs.length}</summary><table class="lpb-table seg-table"><tbody>${rest.map(row).join('')}</tbody></table></details>` : ''}`;
 }
@@ -575,6 +594,7 @@ export async function segmentToTarget(seg: SearchSegment, teamId: number | null)
       geometry: { type: 'Polygon', coordinates: [seg.targetRing] },
       priority: seg.rank <= 3 ? 1 : seg.rank <= 6 ? 2 : 3,
       teamId,
+      segmentId: seg.id,
       notes: `Mostly ${ground(seg.dominant).toLowerCase()}, ${areaText(seg.areaKm2)}.${seg.rank === 1 && (area?.atPointPct ?? 0) > 0 ? ' Holds the last known position: search it closely, including cover.' : ''}`,
     });
     const team = (cs.s.search?.teams ?? []).find((t) => t.id === teamId);
@@ -588,7 +608,7 @@ export async function segmentToTarget(seg: SearchSegment, teamId: number | null)
 
 /** Segment ids already made into targets (a segment target's name starts with its id). */
 export function segmentsTaken(): Set<string> {
-  return new Set((cs.s.search?.targets ?? []).filter((t) => t.status !== 'cancelled').map((t) => /^(S\d+)\b/.exec(t.name)?.[1]).filter(Boolean) as string[]);
+  return new Set((cs.s.search?.targets ?? []).filter((t) => t.status !== 'cancelled').map((t) => t.segmentId ?? /^(S\d+)\b/.exec(t.name)?.[1]).filter(Boolean) as string[]);
 }
 
 /** Whether the evidence section is open; kept across re-renders. */
@@ -666,7 +686,17 @@ function wire(root: HTMLElement, a: SidebarActions): void {
     const lon = pts.reduce((s, c) => s + c[0], 0) / pts.length, lat = pts.reduce((s, c) => s + c[1], 0) / pts.length;
     a.locate(lon, lat, t.geometry.type === 'Point' ? 16 : 15);
   }));
-  root.querySelectorAll<HTMLButtonElement>('[data-target-step]').forEach((b) => b.addEventListener('click', async () => { const [id, status] = b.dataset.targetStep!.split(':'); b.disabled = true; await patch(`/api/targets/${id}`, { status }); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-target-step]').forEach((b) => b.addEventListener('click', async () => {
+    const [id, status] = b.dataset.targetStep!.split(':');
+    if (status === 'done') {
+      // how thorough was it? the answer moves probability to the segments not yet searched
+      const t = search?.targets.find((x) => x.id === Number(id));
+      if (t) await askPod(t, async (pod) => { await patch(`/api/targets/${id}`, { status: 'done', pod }); });
+      return;
+    }
+    b.disabled = true;
+    await patch(`/api/targets/${id}`, { status });
+  }));
   root.querySelectorAll<HTMLSelectElement>('[data-assign-target]').forEach((sel) => sel.addEventListener('change', async () => { if (sel.value) await patch(`/api/targets/${sel.value}`, { teamId: Number(sel.dataset.assignTarget) }); }));
   root.querySelectorAll<HTMLSelectElement>('[data-target-status]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/targets/${s.dataset.targetStatus}`, { status: s.value }); }));
   root.querySelectorAll<HTMLSelectElement>('[data-target-team]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/targets/${s.dataset.targetTeam}`, { teamId: s.value ? Number(s.value) : null }); }));

@@ -378,3 +378,18 @@ input[type='file']::file-selector-button { background: var(--panel-2, #1c2733); 
 .ct-entry { padding: 4px 0; border-top: 1px solid var(--line); line-height: 1.4; }
 .ct-arrow { display: inline-block; width: 14px; text-align: center; color: var(--accent); font-weight: 800; }
 .ct-k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-top: 6px; }
+
+/* ---- POD and outcomes ---- */
+.pod-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.pod-levels .btn-sm { display: flex; flex-direction: column; gap: 2px; padding: 9px 6px; }
+.pod-levels small { font-weight: 400; opacity: 0.85; }
+.seg-table tr.searched td { opacity: 0.75; }
+.seg-table .was { text-decoration: line-through; }
+.seg-searched { white-space: nowrap; }
+.seg-note { margin: 2px 0 6px; }
+.oc-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.oc-form { display: grid; gap: 10px; }
+.oc-form .k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.oc-found[hidden] { display: none; }
+.oc-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hist-outcome { margin: 8px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
