@@ -19,13 +19,13 @@ export function renderMapPage(root: HTMLElement): void {
     mapEl = document.createElement('div');
     mapEl.className = 'map-m';
   }
-  root.innerHTML = `<div class="map-wrap"></div>
-    <div class="map-tools">
+  // Tools sit inside the map, top left, clear of the zoom buttons and the attribution.
+  root.innerHTML = `<div class="map-wrap"><div class="map-tools">
       <button class="btn small" data-action="me">◎ Me</button>
       <button class="btn small" data-action="fit">⤢ Fit</button>
-      <button class="btn small" data-action="coverage">Coverage</button>
-    </div>`;
-  root.querySelector('.map-wrap')!.appendChild(mapEl);
+      <button class="btn small on" data-action="coverage">Coverage</button>
+    </div></div>`;
+  root.querySelector('.map-wrap')!.prepend(mapEl);
   if (!map) {
     map = new OpsMap({ interactive: true, search: true, autoFit: false, staleSec: 120 });
     map.mount(mapEl, s);

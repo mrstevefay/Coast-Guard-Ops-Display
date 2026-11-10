@@ -1,5 +1,15 @@
 import type { DashboardState, Fix, IncidentSubject, PlanningPointKind, Principal, SearchAreaResult, SearchSnapshot, UserPublic, WsMessage } from '../../../shared/types';
 
+export type LayerPreset = 'plan' | 'teams' | 'clean';
+type Layers = ConsoleState['layers'];
+/** Layer sets for each stage of the search: what the manager needs to see, and nothing else. */
+export const LAYER_PRESETS: Record<LayerPreset, Omit<Layers, 'ais' | 'topo' | 'follow'>> = {
+  plan: { behaviour: true, terrain: true, areaFill: true, segments: true, heat: true, targets: true, tracks: false, coverage: false, labels: true },
+  teams: { behaviour: false, terrain: true, areaFill: false, segments: false, heat: false, targets: true, tracks: true, coverage: true, labels: true },
+  clean: { behaviour: false, terrain: false, areaFill: false, segments: false, heat: false, targets: true, tracks: false, coverage: false, labels: true },
+};
+export const LAYER_LABEL: Record<keyof Layers, string> = { behaviour: 'Rings', terrain: 'Terrain area', areaFill: 'Area shading', segments: 'Segments', heat: 'Heat', targets: 'Targets', tracks: 'Tracks', coverage: 'Coverage', labels: 'Labels', ais: 'AIS', topo: 'Topo', follow: 'Follow' };
+
 export interface ConsoleState {
   state?: DashboardState;
   search?: SearchSnapshot;
@@ -11,7 +21,9 @@ export interface ConsoleState {
   fixTimes: number[];
   selected: Set<number>;
   tab: 'responders' | 'teams' | 'targets' | 'subject' | 'behaviour';
-  layers: { tracks: boolean; coverage: boolean; targets: boolean; terrain: boolean; heat: boolean; behaviour: boolean; ais: boolean; labels: boolean; topo: boolean; follow: boolean };
+  layers: { behaviour: boolean; terrain: boolean; areaFill: boolean; segments: boolean; heat: boolean; targets: boolean; tracks: boolean; coverage: boolean; labels: boolean; ais: boolean; topo: boolean; follow: boolean };
+  /** Which layer preset is showing; undefined once the manager changes a single layer. */
+  preset?: LayerPreset;
   /** Terrain-shaped search area for the current point + subject (fetched when either changes). */
   searchArea?: { key: string; loading: boolean; area?: SearchAreaResult; error?: string; status?: number };
   /** Subject record for the open incident (fetched when `subjectUpdatedAt` changes); null = none recorded. */
@@ -35,7 +47,8 @@ class ConsoleStore {
     fixTimes: [],
     selected: new Set(),
     tab: 'responders',
-    layers: { tracks: true, coverage: true, targets: true, terrain: true, heat: true, behaviour: true, ais: false, labels: true, topo: false, follow: false },
+    layers: { behaviour: true, terrain: true, areaFill: true, segments: true, heat: true, targets: true, tracks: true, coverage: true, labels: true, ais: false, topo: false, follow: false },
+    preset: 'plan',
     view: 'ops',
     section: 'users',
   };

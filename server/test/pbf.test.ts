@@ -24,13 +24,13 @@ function blob(type: string, data: number[]): Buffer {
 }
 
 function samplePbf(): Buffer {
-  const strings = ['', 'highway', 'footway', 'type', 'multipolygon', 'natural', 'water', 'outer'];
+  const strings = ['', 'highway', 'footway', 'type', 'multipolygon', 'natural', 'water', 'outer', 'name', 'Summit car park', 'amenity', 'parking'];
   const st = strings.flatMap((s) => bytesField(1, str(s)));
   // five nodes round Howth, as 1e-7 degree integers (granularity 100 × 1e-9)
   const pts = [[53.38, -6.06], [53.381, -6.059], [53.382, -6.058], [53.383, -6.06], [53.384, -6.061]];
   const ids = [1, 2, 3, 4, 5];
   const lat = pts.map((p) => Math.round(p[0] * 1e7)), lon = pts.map((p) => Math.round(p[1] * 1e7));
-  const dense = [...bytesField(1, packed(deltas(ids), true)), ...bytesField(5, [...bytesField(1, packed([1, 1, 1, 1, 1], false))]), ...bytesField(8, packed(deltas(lat), true)), ...bytesField(9, packed(deltas(lon), true))];
+  const dense = [...bytesField(1, packed(deltas(ids), true)), ...bytesField(5, [...bytesField(1, packed([1, 1, 1, 1, 1], false))]), ...bytesField(8, packed(deltas(lat), true)), ...bytesField(9, packed(deltas(lon), true)), ...bytesField(10, packed([0, 0, 8, 9, 10, 11, 0, 0, 0], false))]; // node 3 is a named car park
   const g1 = bytesField(2, dense);
   const info = bytesField(4, [...field(1, 0, varint(3)), ...field(2, 0, varint(1700000000))]); // version, timestamp: must be skipped
   const way10 = [...field(1, 0, varint(10)), ...info, ...bytesField(2, packed([1], false)), ...bytesField(3, packed([2], false)), ...bytesField(8, packed(deltas([1, 2, 3]), true))];
@@ -46,14 +46,17 @@ describe('OSM PBF reader', () => {
   it('returns tagged ways and multipolygons with geometry, skipping untagged member ways', () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cg-pbf-')), 'sample.osm.pbf');
     fs.writeFileSync(file, samplePbf());
-    const ways: PbfWay[] = [], rels: PbfRelation[] = [];
+    const ways: PbfWay[] = [], rels: PbfRelation[] = [], named: { id: number; tags: Record<string, string>; lat: number }[] = [];
     const res = readPbf(file, {
       bbox: [-6.1, 53.37, -6.0, 53.4],
       wantWay: (t) => Boolean(t.highway),
       wantRelation: (t) => t.natural === 'water',
       onWay: (w) => ways.push(w),
       onRelation: (r) => rels.push(r),
+      wantNode: (t) => Boolean(t.name),
+      onNode: (n) => named.push(n),
     });
+    expect(named).toEqual([{ id: 3, tags: { name: 'Summit car park', amenity: 'parking' }, lat: expect.closeTo(53.382, 6), lon: expect.closeTo(-6.058, 6) }]);
     expect(res).toEqual({ nodes: 5, ways: 1, relations: 1 });
     expect(ways[0]).toMatchObject({ id: 10, tags: { highway: 'footway' } });
     expect(ways[0].geometry).toHaveLength(3);

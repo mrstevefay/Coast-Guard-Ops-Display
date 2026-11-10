@@ -87,7 +87,14 @@ function renderHeader(): void {
   const s = store.s.state;
   const mode = document.getElementById('m-mode');
   const tasking = s?.mode.mode !== 'callout' && store.s.search?.incident?.kind === 'tasking';
-  if (mode) mode.innerHTML = s?.mode.mode === 'callout' ? '<span class="mode-tag mode-callout">CALLOUT</span>' : tasking ? '<span class="mode-tag mode-tasking">TASKING</span>' : '';
+  // The one mode badge in the app, with the elapsed timer beside it (ticked by the interval below).
+  const startedAt = s?.mode.mode === 'callout' ? s.mode.incident?.receivedAt : tasking ? store.s.search?.incident?.startedAt : undefined;
+  const key = `${s?.mode.mode}:${tasking}:${startedAt ?? ''}`;
+  if (mode && mode.dataset.key !== key) {
+    mode.dataset.key = key;
+    mode.innerHTML = s?.mode.mode === 'callout' ? '<span class="mode-tag mode-callout">CALLOUT</span>' : tasking ? '<span class="mode-tag mode-tasking">TASKING</span>' : '<span class="mode-tag mode-standby">STANDBY</span>';
+    if (startedAt) mode.innerHTML += `<span class="head-elapsed ${tasking ? 'tasking' : ''}" data-elapsed="${startedAt}">${fmtElapsed(Date.now() - Date.parse(startedAt))}</span>`;
+  }
   const conn = document.getElementById('m-conn');
   if (conn) conn.textContent = store.s.connected ? '' : 'offline';
   document.body.classList.toggle('callout', s?.mode.mode === 'callout');

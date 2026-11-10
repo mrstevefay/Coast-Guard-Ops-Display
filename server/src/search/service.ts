@@ -97,7 +97,7 @@ export class SearchService extends EventEmitter implements TrackContext {
    * Open a search without a callout: the display stays in standby and nobody is paged, but
    * responders, teams, targets and tracking all work. Refused while any incident is open.
    */
-  startTasking(input: { text: string; lat?: number; lon?: number; createdBy?: number }): SearchIncident {
+  startTasking(input: { text: string; lat?: number; lon?: number; label?: string; createdBy?: number }): SearchIncident {
     const text = (input.text ?? '').toString().trim();
     if (!text) throw new Error('title is required');
     const open = this.openIncident();
@@ -106,6 +106,9 @@ export class SearchService extends EventEmitter implements TrackContext {
     const t = now();
     this.db.run("INSERT INTO incidents (id, kind, text, received_at, lat, lon, source, started_at, created_by) VALUES (?, 'tasking', ?, ?, ?, ?, 'app', ?, ?)", id, text.slice(0, 2000), t, finite(input.lat), finite(input.lon), t, input.createdBy ?? null);
     this.recordConditions(id, 'start');
+    // A position given when the tasking is opened is where the subject was last known to be.
+    const lat = finite(input.lat), lon = finite(input.lon);
+    if (lat !== null && lon !== null) this.points.setLkp(id, { lat, lon, label: input.label }, input.createdBy);
     this.changed();
     return toIncident(this.incidentById(id)!, this.subjects, this.points);
   }
@@ -376,8 +379,24 @@ export class SearchService extends EventEmitter implements TrackContext {
       'INSERT INTO targets (incident_id, team_id, name, kind, geometry, notes, status, priority, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       incidentId, input.teamId ?? null, name, input.kind, JSON.stringify(geometry), input.notes?.slice(0, 500) ?? null, input.teamId ? 'assigned' : 'planned', clampPriority(input.priority), createdBy ?? null, t, t,
     );
+    if (input.teamId) this.syncTeamStatus(input.teamId);
     this.changed();
     return this.target(r.lastInsertRowid)!;
+  }
+
+  /**
+   * A team's status follows its targets: a target being searched means searching, one waiting
+   * means tasked, all done means returned. Forming and stood-down teams with no live target,
+   * and manual changes between target moves, are left alone.
+   */
+  private syncTeamStatus(teamId: number | null): void {
+    if (!teamId) return;
+    const tr = this.teamRow(teamId);
+    if (!tr || tr.status === 'stood-down') return;
+    const st = this.db.all<{ status: TargetStatus }>("SELECT status FROM targets WHERE team_id = ? AND status != 'cancelled'", teamId).map((r) => r.status);
+    if (!st.length) return;
+    const next: TeamStatus = st.includes('in-progress') ? 'searching' : st.some((x) => x === 'assigned' || x === 'planned') ? 'tasked' : 'returned';
+    if (next !== tr.status) this.db.run('UPDATE teams SET status = ?, updated_at = ? WHERE id = ?', next, now(), teamId);
   }
 
   updateTarget(id: number, patch: { name?: string; geometry?: unknown; notes?: string; status?: TargetStatus; priority?: number; teamId?: number | null }): Target {
@@ -395,12 +414,16 @@ export class SearchService extends EventEmitter implements TrackContext {
       patch.name?.trim() || tr.name, geometry, patch.notes === undefined ? tr.notes : patch.notes.slice(0, 500), status, patch.priority === undefined ? tr.priority : clampPriority(patch.priority), teamId, t,
       status === 'done' ? (tr.completed_at ?? t) : null, id,
     );
+    this.syncTeamStatus(teamId);
+    if (tr.team_id && tr.team_id !== teamId) this.syncTeamStatus(tr.team_id);
     this.changed();
     return this.target(id)!;
   }
 
   deleteTarget(id: number): void {
+    const teamId = this.db.get<{ team_id: number | null }>('SELECT team_id FROM targets WHERE id = ?', id)?.team_id ?? null;
     if (this.db.run('DELETE FROM targets WHERE id = ?', id).changes === 0) throw new Error('target not found');
+    this.syncTeamStatus(teamId);
     this.changed();
   }
 

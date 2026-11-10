@@ -62,15 +62,18 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
    * responders) but the display stays in standby and nobody is paged. `callout: true`
    * raises a callout instead (TV to callout mode, crew app alert), as the pager bridge does.
    */
-  app.post<{ Body: { text?: string; lat?: number; lon?: number; callout?: boolean } }>('/api/incidents', { preHandler: manager }, async (req, reply) => {
+  app.post<{ Body: { text?: string; lat?: number; lon?: number; label?: string; callout?: boolean } }>('/api/incidents', { preHandler: manager }, async (req, reply) => {
     try {
       const p = req.principal!;
       if (req.body?.callout) {
         const mode = d.callout.callout({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, source: 'app' });
         audit.log(p, req.ip, 'incident.started', { type: 'incident', id: mode.incident!.id }, { kind: 'callout' });
+        // raised from the console with a position: that is the last known position, as for a tasking
+        const open = search.openIncident();
+        if (open && Number.isFinite(req.body?.lat) && Number.isFinite(req.body?.lon)) search.setPlanningPoint(open.id, { lat: Number(req.body!.lat), lon: Number(req.body!.lon), label: req.body?.label?.toString().slice(0, 120) || undefined }, p.kind === 'user' ? p.userId : undefined);
         return { incident: search.openIncident() ? search.snapshot().incident : undefined, mode };
       }
-      const incident = search.startTasking({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, createdBy: p.kind === 'user' ? p.userId : undefined });
+      const incident = search.startTasking({ text: String(req.body?.text ?? ''), lat: req.body?.lat, lon: req.body?.lon, label: req.body?.label?.toString().slice(0, 120) || undefined, createdBy: p.kind === 'user' ? p.userId : undefined });
       audit.log(p, req.ip, 'incident.started', { type: 'incident', id: incident.id }, { kind: 'tasking' });
       return { incident };
     } catch (e) {
@@ -163,6 +166,15 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
       const code = (e as { code?: string }).code;
       return bad(reply, e, code === 'NOT_BUILT' ? 503 : code === 'OUTSIDE' || code === 'NO_START' ? 422 : 500);
     }
+  });
+
+  /** Place search for the console: named places, roads and paths from the terrain build (no internet needed). */
+  app.get<{ Querystring: { q?: string; lat?: string; lon?: string } }>('/api/places', { preHandler: manager }, async (req) => {
+    const q = String(req.query.q ?? '').slice(0, 80);
+    const lat = Number(req.query.lat), lon = Number(req.query.lon);
+    const near = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : { lat: cfg.station.lat, lon: cfg.station.lon };
+    const places = d.terrain ? d.terrain.searchPlaces(q, near) : [];
+    return { places: places.map(([name, kind, plat, plon]) => ({ name, kind, lat: plat, lon: plon })), indexed: Boolean(d.terrain?.hasPlaces()) };
   });
 
   const admin = requireAuth(d, 'admin');

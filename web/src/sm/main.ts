@@ -1,7 +1,7 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import { POINT_KIND_LABEL, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
+import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
 import { ApiError, get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -10,10 +10,12 @@ import { toast } from '../m/ui';
 import { WsClient } from '../ws';
 import { TargetDrawing, type DrawKind } from './draw';
 import { historyMapResize, leaveHistory, renderHistory } from './history';
-import { closeModal, modal, modalOpen } from './modal';
+import { closeModal, confirmBox, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
 import { renderSidebar } from './sidebar';
-import { cs } from './state';
+import { attachLocationSearch, type LocationPick } from './locate';
+import maplibregl from 'maplibre-gl';
+import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
 
 const app = document.getElementById('app')!;
 let ws: WsClient | undefined;
@@ -58,10 +60,12 @@ function start(): void {
       <div class="sm-actions" id="sm-actions"></div>
       <a class="btn-sm sm-view" id="sm-history-btn" href="#history" title="Past taskings and callouts: replay and reports">History</a>
       <button class="btn-sm sm-view" id="sm-view" title="Settings & administration">⚙ Settings</button>
+      <div class="sm-close" id="sm-close"></div>
     </header>
     <aside class="sm-side" id="sm-side"></aside>
     <main class="sm-map" id="sm-map-wrap">
       <div class="layer-panel" id="layer-panel"></div>
+      <div class="map-search"><input id="map-search" type="search" placeholder="Search a place or paste a position" aria-label="Search a place or paste a position" /></div>
       <div class="draw-hint" id="draw-hint"></div>
     </main>
     <section class="sm-settings" id="sm-settings"></section>
@@ -88,6 +92,10 @@ function start(): void {
     reloadAfterMs: 0,
   });
   ws.start();
+  attachLocationSearch(document.getElementById('map-search') as HTMLInputElement, {
+    near: () => cs.s.search?.incident?.ipp ?? (cs.s.state ? { lat: cs.s.state.station.lat, lon: cs.s.state.station.lon } : undefined),
+    onPick: (p) => placeFromSearch(p),
+  });
   cs.subscribe(render);
   document.addEventListener('keydown', onKey);
   setInterval(() => renderTop(), 1000);
@@ -153,7 +161,8 @@ function render(): void {
         const inc = cs.s.search?.incident;
         setPicking(undefined);
         if (!inc) return;
-        void placePoint(inc.id, pick, e.lngLat.lat, e.lngLat.lng);
+        if (pick.pointId) void movePoint(pick, e.lngLat.lat, e.lngLat.lng);
+        else openPointBox(e.lngLat.lat, e.lngLat.lng, pick.kind);
       });
       applyLayers();
     });
@@ -177,6 +186,7 @@ function render(): void {
     pickPoint: (kind, pointId) => setPicking(cs.s.picking && cs.s.picking.kind === kind && cs.s.picking.pointId === pointId ? undefined : { kind, pointId }),
     fitRings: () => map?.fitBehaviourRings(),
   });
+  presetForTab();
   renderLayers();
   renderStatus();
   if (cs.s.layers.follow && cs.s.search?.incident) map.fitAll(s, cs.s.search);
@@ -238,35 +248,87 @@ function setPicking(pick: { kind: PlanningPointKind; pointId?: number } | undefi
   document.getElementById('sm-map-wrap')?.classList.toggle('picking', Boolean(pick));
   const hint = document.getElementById('draw-hint');
   if (hint && pick) {
-    hint.textContent = `Click the map to ${pick.pointId ? 'move' : 'place'}: ${POINT_KIND_LABEL[pick.kind]} (Esc to cancel)`;
+    hint.textContent = `Click the map, or search above, to ${pick.pointId ? 'move' : 'place'}: ${POINT_KIND_LABEL[pick.kind]} (Esc to cancel)`;
+    if (!pick.pointId) (document.getElementById('map-search') as HTMLInputElement | null)?.focus();
     hint.style.display = 'block';
   } else if (hint && !pick && drawing?.mode === 'static') hint.style.display = 'none';
   cs.notify();
 }
 
-const POINT_PROMPT: Record<PlanningPointKind, string> = {
-  lkp: 'Label for the last known position (optional, e.g. "Car park", "Phone ping")',
-  pls: 'Label for the place last seen (optional, e.g. "Seen by dog walker")',
-  home: 'Label for home (optional, e.g. "Home", "Care home")',
-  vehicle: 'Label for the vehicle (optional, e.g. "Silver Golf 12-D-…")',
-  significant: 'What is this place to them? (e.g. "Favourite bench", "Where his wife\'s ashes were scattered")',
-  other: 'Label for this point',
+const POINT_HINT: Record<PlanningPointKind, string> = {
+  lkp: 'Label, e.g. Car park, Phone ping',
+  pls: 'Label, e.g. Seen by dog walker',
+  home: 'Label, e.g. Home, Care home',
+  vehicle: 'Label, e.g. Silver Golf 12-D-…',
+  significant: 'What is this place to them?',
+  other: 'Label',
 };
 
-async function placePoint(incidentId: string, pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
+async function movePoint(pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
   try {
-    if (pick.pointId) {
-      await patch(`/api/points/${pick.pointId}`, { lat, lon });
-      toast(`${POINT_KIND_LABEL[pick.kind]} moved`);
-      return;
-    }
-    const label = prompt(POINT_PROMPT[pick.kind], '');
-    if (label === null) return; // cancelled
-    await post(`/api/incidents/${incidentId}/points`, { kind: pick.kind, label, lat, lon });
-    toast(`${POINT_KIND_LABEL[pick.kind]} set`);
+    await patch(`/api/points/${pick.pointId}`, { lat, lon });
+    toast(`${POINT_KIND_LABEL[pick.kind]} moved`);
   } catch (err) {
     toast(err instanceof Error ? err.message : 'failed', true);
   }
+}
+
+let pointBox: maplibregl.Popup | undefined;
+
+/**
+ * The label box for a new point, opened on the map where it goes: kind, label and note in one
+ * small form. Enter saves, Escape cancels. Replaces the browser's prompt box.
+ */
+function openPointBox(lat: number, lon: number, kind: PlanningPointKind, label = ''): void {
+  const m = map?.getMap();
+  const inc = cs.s.search?.incident;
+  if (!m || !inc) return;
+  pointBox?.remove();
+  let chosen = kind;
+  const el = document.createElement('form');
+  el.className = 'pt-box';
+  const chips = () => PLANNING_POINT_KINDS.map((k) => `<button type="button" class="pt-chip k-${k} ${k === chosen ? 'on' : ''}" data-k="${k}" title="${esc(POINT_KIND_LABEL[k])}">${esc(POINT_KIND_SHORT[k])}</button>`).join('');
+  el.innerHTML = `<div class="pt-box-kind"><b id="pt-kind-name">${esc(POINT_KIND_LABEL[chosen])}</b></div>
+    <div class="pt-chips">${chips()}</div>
+    <input name="label" maxlength="120" value="${esc(label)}" placeholder="${esc(POINT_HINT[chosen])}" />
+    <input name="note" maxlength="500" placeholder="Note (optional)" />
+    <div class="pt-box-actions"><button type="submit" class="btn-sm primary">Save</button><button type="button" class="btn-sm" data-cancel>Cancel</button><span class="muted small">Enter saves</span></div>`;
+  const wireChips = () => el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
+    chosen = b.dataset.k as PlanningPointKind;
+    el.querySelector('.pt-chips')!.innerHTML = chips();
+    el.querySelector('#pt-kind-name')!.textContent = POINT_KIND_LABEL[chosen];
+    (el.querySelector('input[name=label]') as HTMLInputElement).placeholder = POINT_HINT[chosen];
+    wireChips();
+  }));
+  wireChips();
+  const close = () => { pointBox?.remove(); pointBox = undefined; };
+  el.querySelector('[data-cancel]')!.addEventListener('click', close);
+  el.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } });
+  el.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(el);
+    try {
+      await post(`/api/incidents/${inc.id}/points`, { kind: chosen, label: String(f.get('label') ?? '').trim() || null, note: String(f.get('note') ?? '').trim() || null, lat, lon });
+      toast(`${POINT_KIND_LABEL[chosen]} set`);
+      close();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'failed', true);
+    }
+  });
+  pointBox = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px', className: 'pt-popup', offset: 10 }).setLngLat([lon, lat]).setDOMContent(el).addTo(m);
+  setTimeout(() => (el.querySelector('input[name=label]') as HTMLInputElement).focus(), 0);
+}
+
+/** A search result: go there and open the label box, with the kind the manager armed (or the obvious one). */
+function placeFromSearch(p: LocationPick): void {
+  const inc = cs.s.search?.incident;
+  map?.flyTo(p.lon, p.lat, 16);
+  if (!inc) return toast('Open a tasking first: then the search places points', true);
+  const armed = cs.s.picking;
+  if (armed?.pointId) { setPicking(undefined); void movePoint(armed, p.lat, p.lon); return; }
+  const kind: PlanningPointKind = armed?.kind ?? (inc.points?.some((x) => x.kind === 'lkp') ? 'other' : 'lkp');
+  setPicking(undefined);
+  openPointBox(p.lat, p.lon, kind, p.label ?? '');
 }
 
 function renderTop(): void {
@@ -284,9 +346,11 @@ function renderTop(): void {
     const modeKey = `${tasking ? 'tasking' : 'callout'}:${inc.id}`;
     if (actions.dataset.mode !== modeKey) {
       actions.dataset.mode = modeKey;
-      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
-      actions.querySelector('#standdown')!.addEventListener('click', async () => {
-        if (confirm(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.')) await post(`/api/incidents/${inc.id}/close`);
+      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      const close = document.getElementById('sm-close')!;
+      close.innerHTML = `<button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button>`;
+      close.querySelector('#standdown')!.addEventListener('click', async () => {
+        if (await confirmBox(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.', tasking ? 'Close tasking' : 'Stand down')) await post(`/api/incidents/${inc.id}/close`);
       });
     }
   } else {
@@ -294,19 +358,43 @@ function renderTop(): void {
     if (actions.dataset.mode !== 'standby') {
       actions.dataset.mode = 'standby';
       actions.innerHTML = `<button class="btn-sm primary" id="new-incident">New tasking</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      document.getElementById('sm-close')!.innerHTML = '';
       actions.querySelector('#new-incident')!.addEventListener('click', () => openIncidentModal());
     }
   }
 }
 
+/** Layer bar: three presets for the stages of a search, plus a menu of single layers. */
 function renderLayers(): void {
   const el = document.getElementById('layer-panel')!;
-  if (el.dataset.built) return;
-  el.dataset.built = '1';
   const L = cs.s.layers;
-  el.innerHTML = (Object.keys(L) as (keyof typeof L)[]).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}/> ${k[0].toUpperCase() + k.slice(1)}</label>`).join('') + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`;
-  el.querySelectorAll<HTMLInputElement>('[data-layer]').forEach((c) => c.addEventListener('change', () => { (L as any)[c.dataset.layer!] = c.checked; applyLayers(); }));
+  const key = `${cs.s.preset ?? ''}:${Object.values(L).join('')}`;
+  if (el.dataset.key === key) return;
+  const menuOpen = el.querySelector<HTMLDetailsElement>('details')?.open ?? false;
+  el.dataset.key = key;
+  el.innerHTML = (['plan', 'teams', 'clean'] as const).map((p) => `<button class="mini ${cs.s.preset === p ? 'on' : ''}" data-preset="${p}">${p[0].toUpperCase() + p.slice(1)}</button>`).join('')
+    + `<details class="layer-menu" ${menuOpen ? 'open' : ''}><summary class="mini">Layers ▾</summary><div class="layer-list">${(Object.keys(L) as (keyof typeof L)[]).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}/> ${LAYER_LABEL[k]}</label>`).join('')}</div></details>`
+    + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`;
+  el.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset as LayerPreset)));
+  el.querySelectorAll<HTMLInputElement>('[data-layer]').forEach((c) => c.addEventListener('change', () => { (L as any)[c.dataset.layer!] = c.checked; cs.s.preset = undefined; applyLayers(); renderLayers(); }));
   el.querySelector('#fit-all')!.addEventListener('click', () => { if (cs.s.state) map?.fitAll(cs.s.state, cs.s.search); });
+}
+
+function setPreset(p: LayerPreset): void {
+  Object.assign(cs.s.layers, LAYER_PRESETS[p]);
+  cs.s.preset = p;
+  applyLayers();
+  renderLayers();
+}
+
+/** Opening a stage's tab shows that stage's layers, unless the manager has picked layers by hand. */
+let lastTab = cs.s.tab;
+function presetForTab(): void {
+  if (cs.s.tab === lastTab) return;
+  lastTab = cs.s.tab;
+  if (cs.s.preset === undefined) return;
+  const p: LayerPreset | undefined = cs.s.tab === 'behaviour' ? 'plan' : cs.s.tab === 'teams' || cs.s.tab === 'targets' ? 'teams' : undefined;
+  if (p && p !== cs.s.preset) setPreset(p);
 }
 
 function applyLayers(): void {
@@ -316,7 +404,10 @@ function applyLayers(): void {
   map.setLayerVisible('coverage-line', L.coverage);
   for (const id of ['targets-fill', 'targets-line', 'targets-point'] as const) map.setLayerVisible(id, L.targets);
   for (const id of ['behaviour-fill', 'behaviour-line'] as const) map.setLayerVisible(id, L.behaviour);
-  for (const id of ['area-fill', 'area-line', 'segment-line', 'corridor-line'] as const) map.setLayerVisible(id, L.terrain);
+  map.setLayerVisible('area-line', L.terrain);
+  map.setLayerVisible('corridor-line', L.terrain);
+  map.setLayerVisible('area-fill', L.terrain && L.areaFill);
+  map.setLayerVisible('segment-line', L.segments);
   map.setLayerVisible('heat', L.heat);
   map.setLayerVisible('ais-dot', L.ais);
   map.setLayerVisible('labels', L.labels);
@@ -410,25 +501,36 @@ function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
 
 function openIncidentModal(): void {
   const root = modal(`<h3>New tasking</h3>
-    <p class="muted">Opens the search (responders, teams, targets, tracking) for the crew app and this console. The TV stays in standby and nobody is paged unless you tick the callout box.</p>
     <form id="if">
-      <label>Tasking title / details <textarea name="text" rows="3" required placeholder="e.g. Missing walker, Howth Head cliff path — request from Gardaí"></textarea></label>
-      <label>Position (optional) <input name="pos" placeholder="53.4105, -6.0550" /></label>
-      <label class="check"><input type="checkbox" name="callout" /> Also raise a <b>callout</b>: TV to callout mode, crew app alert, auto stand-down timer (as the pager does)</label>
-      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary" id="start">Start tasking</button></div>
+      <label>What and where <textarea name="text" rows="3" required autofocus placeholder="e.g. Missing walker, Howth Head cliff path, request from Gardaí"></textarea></label>
+      <label>Last known position <span class="muted small">(optional: set it on the map later)</span>
+        <span class="loc-wrap"><input id="if-pos" type="search" placeholder="Search a place or paste a position" /></span>
+        <span class="small" id="if-pos-read"></span></label>
+      <div class="start-pair">
+        <button type="submit" class="btn-sm primary" data-callout="0"><b>Start tasking</b><small>Console and crew app only. Nobody is paged.</small></button>
+        <button type="submit" class="btn-sm danger" data-callout="1"><b>Raise callout</b><small>Alerts crew, TV to callout mode, auto stand-down.</small></button>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button></div>
     </form>`);
   root.querySelector('#cancel')!.addEventListener('click', closeModal);
-  const cb = root.querySelector<HTMLInputElement>('input[name=callout]')!;
-  const start = root.querySelector<HTMLButtonElement>('#start')!;
-  cb.addEventListener('change', () => { start.textContent = cb.checked ? 'CALLOUT' : 'Start tasking'; start.className = `btn-sm ${cb.checked ? 'danger' : 'primary'}`; });
+  let pos: LocationPick | undefined;
+  const read = root.querySelector<HTMLElement>('#if-pos-read')!;
+  attachLocationSearch(root.querySelector<HTMLInputElement>('#if-pos')!, {
+    near: () => (cs.s.state ? { lat: cs.s.state.station.lat, lon: cs.s.state.station.lon } : undefined),
+    onPick: (p) => {
+      pos = p;
+      read.innerHTML = `Set: <b>${esc(p.label ?? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)}</b> <button type="button" class="mini" id="if-pos-clear">×</button>`;
+      read.querySelector('#if-pos-clear')!.addEventListener('click', () => { pos = undefined; read.innerHTML = ''; });
+    },
+  });
   root.querySelector<HTMLFormElement>('#if')!.addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    const callout = (ev as SubmitEvent).submitter?.getAttribute('data-callout') === '1';
     const f = new FormData(ev.target as HTMLFormElement);
-    const pos = String(f.get('pos') ?? '').split(',').map((x) => Number(x.trim()));
     try {
-      await post('/api/incidents', { text: f.get('text'), callout: cb.checked, lat: pos.length === 2 && Number.isFinite(pos[0]) ? pos[0] : undefined, lon: pos.length === 2 && Number.isFinite(pos[1]) ? pos[1] : undefined });
+      await post('/api/incidents', { text: f.get('text'), callout, lat: pos?.lat, lon: pos?.lon, label: pos?.label });
       closeModal();
-      cs.s.tab = 'responders';
+      cs.s.tab = 'subject';
     } catch (e) {
       toast(e instanceof Error ? e.message : 'failed', true);
     }
@@ -439,6 +541,7 @@ function onKey(ev: KeyboardEvent): void {
   if ((ev.target as HTMLElement).matches('input, textarea, select')) return;
   const k = ev.key.toLowerCase();
   if (k === 'escape' && modalOpen()) return closeModal();
+  if (k === 'escape' && pointBox) { pointBox.remove(); pointBox = undefined; return; }
   if (k === 'escape' && cs.s.picking) return setPicking(undefined);
   if (cs.s.view !== 'ops' || !drawing) return;
   if (k === 'escape') drawing.stopEditing();
