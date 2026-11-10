@@ -564,6 +564,10 @@ export interface Target {
   priority: number;
   createdAt: string;
   completedAt?: string;
+  /** The terrain segment this target was made from (S1, S2…), so its search updates the plan. */
+  segmentId?: string;
+  /** Probability of detection recorded when the target was searched, 0–1. */
+  pod?: number;
 }
 
 // ----------------------------------------------------------- history / replay / report
@@ -761,3 +765,33 @@ export interface ContactLogEntry {
   byUserId?: number;
   byName?: string;
 }
+
+// ---------------------------------------------------------------- outcomes
+export type OutcomeKind = 'found-well' | 'found-injured' | 'found-deceased' | 'not-found' | 'located-elsewhere' | 'other';
+export const OUTCOME_KINDS: OutcomeKind[] = ['found-well', 'found-injured', 'found-deceased', 'located-elsewhere', 'not-found', 'other'];
+export const OUTCOME_LABEL: Record<OutcomeKind, string> = {
+  'found-well': 'Found well', 'found-injured': 'Found injured', 'found-deceased': 'Found deceased',
+  'located-elsewhere': 'Located elsewhere', 'not-found': 'Not found', other: 'Other',
+};
+/** Where the subject was found, in the same terms as the find-location statistics. */
+export const FOUND_LOCATIONS = ['Open Ground', 'Travel Aid', 'Linear Feature', 'Trees', 'Water', 'Habitation', 'Other'] as const;
+export type FoundLocation = (typeof FOUND_LOCATIONS)[number];
+export type FoundBy = 'cg-team' | 'other-agency' | 'public' | 'self' | 'other';
+export const FOUND_BY_LABEL: Record<FoundBy, string> = { 'cg-team': 'Coast Guard team', 'other-agency': 'Other agency', public: 'Member of the public', self: 'Returned or made contact', other: 'Other' };
+
+export interface IncidentOutcome {
+  incidentId: string;
+  outcome: OutcomeKind;
+  foundAt?: string;
+  lat?: number;
+  lon?: number;
+  /** Straight-line distance from the planning point (LKP, else PLS), worked out when recorded. */
+  distanceKm?: number;
+  locationType?: FoundLocation;
+  foundBy?: FoundBy;
+  notes?: string;
+  recordedAt: string;
+}
+
+/** What the coverage of a target so far suggests its POD is. */
+export interface TargetCoverage { trackM: number; areaM2: number; coverage: number; pod: number; sweepEachSideM: number }

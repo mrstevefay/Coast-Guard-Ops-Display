@@ -2,7 +2,8 @@
  * History: past (and the current) taskings and callouts — who was on what team, where the
  * teams covered, a replay from start to finish, and the end-of-mission report.
  */
-import { POINT_KIND_LABEL, POINT_KIND_SHORT } from '../../../shared/types';
+import { FOUND_BY_LABEL, OUTCOME_LABEL, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentOutcome } from '../../../shared/types';
+import { openOutcome } from './outcome';
 import type { ConditionsSnapshot, DashboardState, Fix, IncidentReplay, IncidentSummary, SearchSnapshot } from '../../../shared/types';
 import { get } from '../api';
 import { esc, fmtDurationMin, fmtElapsed, fmtTime } from '../format';
@@ -26,6 +27,7 @@ let map: OpsMap | undefined;
 let mapEl: HTMLElement | undefined;
 let replay: IncidentReplay | undefined;
 let report: ReportJson | undefined;
+let outcome: IncidentOutcome | undefined;
 let tab: 'summary' | 'timeline' | 'conditions' = 'summary';
 let playing = false;
 let speed = 60;
@@ -57,7 +59,7 @@ export function leaveHistory(): void {
 async function loadList(el: HTMLElement): Promise<void> {
   try {
     const { incidents } = await get<{ incidents: IncidentSummary[] }>('/api/incidents?limit=200');
-    el.innerHTML = `<div class="set-head"><h2>History</h2><span class="muted small">${incidents.length} incidents</span></div>
+    el.innerHTML = `<div class="set-head"><h2>History</h2><span class="muted small">${incidents.length} incidents</span><a class="btn-sm" href="/api/outcomes.csv" download title="Anonymised outcomes: category, age band, distance, where found">Outcomes (CSV)</a></div>
       <table class="set-table hist-table"><thead><tr><th>Started</th><th></th><th>Title</th><th>Duration</th><th>Resp.</th><th>Teams</th><th>Targets</th></tr></thead><tbody>
       ${incidents.map((i) => `<tr data-id="${esc(i.id)}" class="${i.endedAt ? '' : 'open'}"><td class="nowrap">${fmtDT(i.startedAt)}</td><td>${kindTag(i.kind)}</td><td>${esc(i.text.slice(0, 90))}${i.endedAt ? '' : ' <span class="badge-s amber">open</span>'}</td><td>${i.endedAt ? fmtMin(Math.round((Date.parse(i.endedAt) - Date.parse(i.startedAt)) / 60000)) : '—'}</td><td>${i.responders}</td><td>${i.teams}</td><td>${i.targets}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Nothing yet.</td></tr>'}
       </tbody></table>`;
@@ -70,7 +72,7 @@ async function loadList(el: HTMLElement): Promise<void> {
 async function loadDetail(root: HTMLElement, id: string): Promise<void> {
   const side = root.querySelector<HTMLElement>('#hist-side')!;
   try {
-    [replay, report] = await Promise.all([get<IncidentReplay>(`/api/incidents/${id}/replay`), get<{ report: ReportJson }>(`/api/incidents/${id}/report`).then((r) => r.report)]);
+    [replay, report, outcome] = await Promise.all([get<IncidentReplay>(`/api/incidents/${id}/replay`), get<{ report: ReportJson }>(`/api/incidents/${id}/report`).then((r) => r.report), get<{ outcome: IncidentOutcome | null }>(`/api/incidents/${id}/outcome`).then((r) => r.outcome ?? undefined).catch(() => undefined)]);
   } catch (e) {
     side.innerHTML = `<p class="note error">${esc(e instanceof Error ? e.message : 'failed')}</p>`;
     return;
@@ -110,6 +112,7 @@ function renderSide(side: HTMLElement): void {
     <div class="tabs-sm three"><button class="tab ${tab === 'summary' ? 'active' : ''}" data-htab="summary">Summary</button><button class="tab ${tab === 'timeline' ? 'active' : ''}" data-htab="timeline">Timeline (${replay!.events.length})</button><button class="tab ${tab === 'conditions' ? 'active' : ''}" data-htab="conditions">Conditions</button></div>
     <div class="sb-body" id="hist-body">${tab === 'summary' ? summaryTab() : tab === 'timeline' ? timelineTab() : conditionsTab()}</div>`;
   side.querySelectorAll<HTMLButtonElement>('[data-htab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.htab as typeof tab; renderSide(side); }));
+  side.querySelector('#hist-outcome-edit')?.addEventListener('click', () => openOutcome({ incidentId: replay!.incident.id, points: replay!.incident.points ?? [], existing: outcome, onSaved: async () => { outcome = (await get<{ outcome: IncidentOutcome | null }>(`/api/incidents/${replay!.incident.id}/outcome`)).outcome ?? undefined; renderSide(side); } }));
   side.querySelectorAll<HTMLElement>('[data-jump]').forEach((el) => el.addEventListener('click', () => { T = Math.floor(Date.parse(el.dataset.jump!) / 1000); pause(); applyTime(); }));
 }
 
@@ -119,6 +122,7 @@ function summaryTab(): string {
   const stat = (k: string, v: string) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`;
   return `<div class="stats">${stat('Responders', `${r.totals.responders}`)}${stat('On scene', `${r.totals.onScene}`)}${stat('Teams', `${r.totals.teams}`)}${stat('Targets', `${r.totals.targetsDone}/${r.totals.targetsTotal}`)}${stat('Track', `${r.totals.trackKm} km`)}${stat('Swept', `${r.totals.sweptKm2} km²`)}</div>
     ${(inc.points ?? []).map((p) => `<p class="small"><b class="amber">${esc(POINT_KIND_SHORT[p.kind])}</b> ${esc(p.label ?? POINT_KIND_LABEL[p.kind])} ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</p>`).join('') || (inc.ipp ? `<p class="small"><b class="amber">IPP</b> ${esc(inc.ipp.label ?? '')} ${inc.ipp.lat.toFixed(4)}, ${inc.ipp.lon.toFixed(4)}</p>` : '')}
+    <div class="hist-outcome">${outcome ? `<b>${esc(OUTCOME_LABEL[outcome.outcome])}</b>${outcome.locationType ? ` · ${esc(outcome.locationType.toLowerCase())}` : ''}${outcome.distanceKm !== undefined ? ` · ${outcome.distanceKm} km from the planning point` : ''}${outcome.foundBy ? ` · ${esc(FOUND_BY_LABEL[outcome.foundBy])}` : ''}` : '<span class="muted">Outcome not recorded</span>'} <button class="mini" id="hist-outcome-edit">${outcome ? 'Edit' : 'Record outcome'}</button></div>
     <h4>Responders</h4>
     <table class="set-table small"><thead><tr><th>Name</th><th>Team</th><th>Resp.</th><th>Scene</th><th>On scene</th><th>Track</th></tr></thead><tbody>
     ${r.responders.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.team ? esc(p.teamCallsign ?? p.team) : '—'}</td><td title="${fmtTime(p.respondedAt)}">${fmtMin(p.responseMin)}</td><td title="${fmtTime(p.onSceneAt)}">${fmtMin(p.toSceneMin)}</td><td>${fmtMin(p.onSceneMin)}</td><td>${p.trackKm} km</td></tr>`).join('') || '<tr><td colspan="6" class="muted">None</td></tr>'}

@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { FIND_LABEL, FIND_TYPES, PRIVATE_POINT_KINDS, type FindType } from '../../../shared/types.js';
+import { FIND_LABEL, FIND_TYPES, FOUND_BY_LABEL, FOUND_LOCATIONS, OUTCOME_KINDS, PRIVATE_POINT_KINDS, type FindType, type FoundBy, type FoundLocation, type IncidentOutcome, type OutcomeKind, type TargetCoverage } from '../../../shared/types.js';
+import { coverageFromTracks, distanceM } from '../../../shared/searchtheory.js';
 import type { Fix, IncidentKind, IncidentReplay, IncidentSummary, ModeState, MusterState, ResponderRow, ResponseStatus, SearchIncident, SearchSnapshot, Target, TargetKind, TargetStatus, Team, TeamMember, TeamStatus } from '../../../shared/types.js';
 import type { Users } from '../auth/users.js';
 import type { AppConfig } from '../config.js';
@@ -18,7 +19,7 @@ import type { TrackContext, Tracking } from './tracking.js';
 interface IncidentRow { id: string; kind: IncidentKind; text: string; received_at: string; lat: number | null; lon: number | null; source: string | null; started_at: string; ended_at: string | null; end_reason: string | null; ipp_lat: number | null; ipp_lon: number | null; ipp_label: string | null; ipp_set_at: string | null }
 interface TeamRow { id: number; incident_id: string; name: string; colour: string; search_width_m: number; leader_user_id: number | null; status: TeamStatus; created_at: string }
 interface MemberRow { team_id: number; user_id: number; position: number; name: string }
-interface TargetRow { id: number; incident_id: string; team_id: number | null; name: string; kind: TargetKind; geometry: string; notes: string | null; status: TargetStatus; priority: number; created_at: string; completed_at: string | null }
+interface TargetRow { id: number; incident_id: string; team_id: number | null; name: string; kind: TargetKind; geometry: string; notes: string | null; status: TargetStatus; priority: number; created_at: string; completed_at: string | null; segment_id: string | null; pod: number | null }
 interface ResponseRow { user_id: number; status: ResponseStatus; eta_min: number | null; note: string | null; updated_at: string; name: string; callsign: string | null }
 
 const RESPONSE_STATUSES: ResponseStatus[] = ['responding', 'on-scene', 'available', 'unavailable', 'stood-down'];
@@ -229,7 +230,7 @@ export class SearchService extends EventEmitter implements TrackContext {
 
   reportHtml(incidentId: string): string | undefined {
     const r = this.report(incidentId);
-    return r ? renderReportHtml(r.report, r.replay, this.cfg.station, this.contacts.list(incidentId)) : undefined;
+    return r ? renderReportHtml(r.report, r.replay, this.cfg.station, this.contacts.list(incidentId), this.outcome(incidentId)) : undefined;
   }
 
   responders(incidentId: string): ResponderRow[] {
@@ -375,7 +376,7 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   // ------------------------------------------------------------ targets
-  createTarget(incidentId: string, input: { name?: string; kind: TargetKind; geometry: unknown; notes?: string; priority?: number; teamId?: number | null }, createdBy?: number): Target {
+  createTarget(incidentId: string, input: { name?: string; kind: TargetKind; geometry: unknown; notes?: string; priority?: number; teamId?: number | null; segmentId?: string }, createdBy?: number): Target {
     this.requireOpen(incidentId);
     if (!['point', 'area', 'line'].includes(input.kind)) throw new Error('kind must be point, area or line');
     const geometry = validateGeometry(input.geometry, input.kind);
@@ -384,8 +385,9 @@ export class SearchService extends EventEmitter implements TrackContext {
     const name = input.name?.trim() || `T${n}`;
     const t = now();
     const r = this.db.run(
-      'INSERT INTO targets (incident_id, team_id, name, kind, geometry, notes, status, priority, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO targets (incident_id, team_id, name, kind, geometry, notes, status, priority, created_by, created_at, updated_at, segment_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       incidentId, input.teamId ?? null, name, input.kind, JSON.stringify(geometry), input.notes?.slice(0, 500) ?? null, input.teamId ? 'assigned' : 'planned', clampPriority(input.priority), createdBy ?? null, t, t,
+      input.segmentId && /^S\d{1,3}$/.test(input.segmentId) ? input.segmentId : null,
     );
     if (input.teamId) this.syncTeamStatus(input.teamId);
     this.changed();
@@ -407,7 +409,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     if (next !== tr.status) this.db.run('UPDATE teams SET status = ?, updated_at = ? WHERE id = ?', next, now(), teamId);
   }
 
-  updateTarget(id: number, patch: { name?: string; geometry?: unknown; notes?: string; status?: TargetStatus; priority?: number; teamId?: number | null }): Target {
+  updateTarget(id: number, patch: { name?: string; geometry?: unknown; notes?: string; status?: TargetStatus; priority?: number; teamId?: number | null; pod?: number | null }): Target {
     const tr = this.db.get<TargetRow>('SELECT * FROM targets WHERE id = ?', id);
     if (!tr) throw new Error('target not found');
     if (patch.status && !TARGET_STATUSES.includes(patch.status)) throw new Error('invalid status');
@@ -416,7 +418,10 @@ export class SearchService extends EventEmitter implements TrackContext {
     let status = patch.status ?? tr.status;
     const teamId = patch.teamId === undefined ? tr.team_id : patch.teamId;
     if (patch.teamId !== undefined && !patch.status) status = teamId ? (status === 'planned' ? 'assigned' : status) : status === 'assigned' ? 'planned' : status;
+    if (patch.pod !== undefined && patch.pod !== null && !(Number(patch.pod) >= 0 && Number(patch.pod) <= 1)) throw new Error('pod must be between 0 and 1');
+    const pod = patch.pod === undefined ? tr.pod : patch.pod === null ? null : Math.round(Number(patch.pod) * 100) / 100;
     const t = now();
+    this.db.run('UPDATE targets SET pod = ? WHERE id = ?', pod, id);
     this.db.run(
       'UPDATE targets SET name = ?, geometry = ?, notes = ?, status = ?, priority = ?, team_id = ?, updated_at = ?, completed_at = ? WHERE id = ?',
       patch.name?.trim() || tr.name, geometry, patch.notes === undefined ? tr.notes : patch.notes.slice(0, 500), status, patch.priority === undefined ? tr.priority : clampPriority(patch.priority), teamId, t,
@@ -497,13 +502,72 @@ export class SearchService extends EventEmitter implements TrackContext {
   }
 
   /** A crew member starts or finishes their own team's target. Only members of that team may. */
-  crewTargetProgress(targetId: number, userId: number, status: string): Target {
+  crewTargetProgress(targetId: number, userId: number, status: string, pod?: number): Target {
     const t = this.target(targetId);
     if (!t) throw new Error('target not found');
     if (status !== 'in-progress' && status !== 'done') throw new Error('status must be in-progress or done');
     const mine = t.teamId ? this.memberIndex(this.db.get<{ incident_id: string }>('SELECT incident_id FROM targets WHERE id = ?', targetId)!.incident_id).get(userId)?.teamId === t.teamId : false;
     if (!mine) throw Object.assign(new Error('this target is not your team’s'), { code: 'FORBIDDEN' });
-    return this.updateTarget(targetId, { status: status as TargetStatus });
+    return this.updateTarget(targetId, { status: status as TargetStatus, ...(status === 'done' && pod !== undefined ? { pod } : {}) });
+  }
+
+  /**
+   * How well a target has been covered so far: the team's tracks inside it since it was created,
+   * times twice the team's sweep width, over its area; and the POD that suggests. Area targets only.
+   */
+  targetCoverage(targetId: number): TargetCoverage | undefined {
+    const t = this.target(targetId);
+    if (!t || t.kind !== 'area' || !t.teamId) return undefined;
+    const team = this.team(t.teamId);
+    const ring = (t.geometry as { coordinates: [number, number][][] }).coordinates[0];
+    const from = Math.floor(Date.parse(t.createdAt) / 1000), to = t.completedAt ? Math.floor(Date.parse(t.completedAt) / 1000) : Math.floor(Date.now() / 1000);
+    const rows = this.db.all<{ user_id: number; tst: number; lat: number; lon: number }>('SELECT user_id, tst, lat, lon FROM positions WHERE incident_id = ? AND team_id = ? AND tst BETWEEN ? AND ? ORDER BY user_id, tst', t.incidentId, t.teamId, from, to);
+    const byUser = new Map<number, { tst: number; lat: number; lon: number }[]>();
+    for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
+    const sweep = team?.searchWidthM ?? this.cfg.search.defaultSearchWidthM;
+    return { ...coverageFromTracks(ring, [...byUser.values()], sweep, this.cfg.search.trackGapSec), sweepEachSideM: sweep };
+  }
+
+  // ------------------------------------------------------------ outcomes
+  outcome(incidentId: string): IncidentOutcome | undefined {
+    const r = this.db.get<{ incident_id: string; outcome: OutcomeKind; found_at: string | null; lat: number | null; lon: number | null; distance_km: number | null; location_type: FoundLocation | null; found_by: FoundBy | null; notes: string | null; recorded_at: string }>('SELECT * FROM incident_outcomes WHERE incident_id = ?', incidentId);
+    return r ? { incidentId: r.incident_id, outcome: r.outcome, foundAt: r.found_at ?? undefined, lat: r.lat ?? undefined, lon: r.lon ?? undefined, distanceKm: r.distance_km ?? undefined, locationType: r.location_type ?? undefined, foundBy: r.found_by ?? undefined, notes: r.notes ?? undefined, recordedAt: r.recorded_at } : undefined;
+  }
+
+  /** Record (or correct) how an incident ended. The distance from the planning point is worked out here. */
+  setOutcome(incidentId: string, input: { outcome?: string; foundAt?: string | null; lat?: number | null; lon?: number | null; locationType?: string | null; foundBy?: string | null; notes?: string | null }, by?: number): IncidentOutcome {
+    if (!this.incidentById(incidentId)) throw new Error('incident not found');
+    if (!OUTCOME_KINDS.includes(input.outcome as OutcomeKind)) throw new Error('unknown outcome');
+    const lat = finite(input.lat ?? undefined), lon = finite(input.lon ?? undefined);
+    if ((lat === null) !== (lon === null)) throw new Error('give both lat and lon, or neither');
+    if (lat !== null && (lat < 49 || lat > 58 || lon! < -12 || lon! > 0)) throw new Error('position is outside Ireland and Britain: check lat/lon');
+    if (input.locationType && !FOUND_LOCATIONS.includes(input.locationType as FoundLocation)) throw new Error('unknown location type');
+    if (input.foundBy && !Object.keys(FOUND_BY_LABEL).includes(input.foundBy)) throw new Error('unknown found-by');
+    const ipp = this.points.planningPoint(incidentId);
+    const dist = lat !== null && ipp ? Math.round((distanceM([ipp.lon, ipp.lat], [lon!, lat]) / 1000) * 100) / 100 : null;
+    const foundAt = input.foundAt && !Number.isNaN(Date.parse(input.foundAt)) ? new Date(input.foundAt).toISOString() : null;
+    this.db.run(`INSERT INTO incident_outcomes (incident_id, outcome, found_at, lat, lon, distance_km, location_type, found_by, notes, recorded_at, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(incident_id) DO UPDATE SET outcome = excluded.outcome, found_at = excluded.found_at, lat = excluded.lat, lon = excluded.lon, distance_km = excluded.distance_km, location_type = excluded.location_type, found_by = excluded.found_by, notes = excluded.notes, recorded_at = excluded.recorded_at, recorded_by = excluded.recorded_by`,
+      incidentId, String(input.outcome), foundAt, lat, lon, dist, input.locationType || null, input.foundBy || null, input.notes?.toString().trim().slice(0, 1000) || null, now(), by ?? null);
+    return this.outcome(incidentId)!;
+  }
+
+  /**
+   * Every recorded outcome with the subject's profile, for the Irish evidence base: no names,
+   * no positions, no free text; month, not date; age in ten-year bands.
+   */
+  outcomesCsv(): string {
+    const rows = this.db.all<{ started_at: string; ended_at: string | null; outcome: string; distance_km: number | null; location_type: string | null; found_by: string | null; found_at: string | null; category: string | null; sex: string | null; age: number | null; terrain: string | null }>(
+      `SELECT i.started_at, i.ended_at, o.outcome, o.distance_km, o.location_type, o.found_by, o.found_at, s.category, s.sex, s.age, s.terrain
+       FROM incident_outcomes o JOIN incidents i ON i.id = o.incident_id LEFT JOIN incident_subjects s ON s.incident_id = o.incident_id ORDER BY i.started_at`);
+    const q = (v: unknown) => (v === null || v === undefined ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const head = ['month', 'category', 'sex', 'age_band', 'terrain', 'outcome', 'distance_km', 'found_location', 'found_by', 'hours_to_find', 'hours_open'];
+    const lines = rows.map((r) => {
+      const hrs = (a?: string | null) => (a ? Math.round(((Date.parse(a) - Date.parse(r.started_at)) / 3_600_000) * 10) / 10 : '');
+      const band = r.age === null || r.age === undefined ? '' : `${Math.floor(r.age / 10) * 10}-${Math.floor(r.age / 10) * 10 + 9}`;
+      return [r.started_at.slice(0, 7), r.category, r.sex, band, r.terrain, r.outcome, r.distance_km, r.location_type, r.found_by, hrs(r.found_at), hrs(r.ended_at)].map(q).join(',');
+    });
+    return [head.join(','), ...lines].join('\n') + '\n';
   }
 
   // ------------------------------------------------------------ muster bridge
@@ -603,5 +667,5 @@ function toIncident(r: IncidentRow, subjects: Subjects, points: Points): SearchI
 }
 
 function toTarget(r: TargetRow): Target {
-  return { id: r.id, incidentId: r.incident_id, teamId: r.team_id ?? undefined, name: r.name, kind: r.kind, geometry: JSON.parse(r.geometry), notes: r.notes ?? undefined, status: r.status, priority: r.priority, createdAt: r.created_at, completedAt: r.completed_at ?? undefined };
+  return { id: r.id, incidentId: r.incident_id, teamId: r.team_id ?? undefined, name: r.name, kind: r.kind, geometry: JSON.parse(r.geometry), notes: r.notes ?? undefined, status: r.status, priority: r.priority, createdAt: r.created_at, completedAt: r.completed_at ?? undefined, segmentId: r.segment_id ?? undefined, pod: r.pod ?? undefined };
 }

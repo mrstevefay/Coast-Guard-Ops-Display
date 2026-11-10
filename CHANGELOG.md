@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Probability updates as areas are searched, and outcome recording.**
+  - **POD:** marking an area searched, on the console or the crew phone, asks how thorough it was (Quick look 30 %, Normal 50 %, Thorough 70 %, Very thorough 90 %). Where the team's tracks cover the area, it also shows the POD they suggest (`GET /api/targets/:id/coverage`). Targets keep the segment they came from (`segmentId`) and their POD.
+  - **Plan tab:** moves probability from searched segments to the others and the rest of the area (Bayes, `shared/searchtheory.ts`), re-ranks, and shows old and new POA. Repeat searches combine.
+  - **Outcomes:** closing a tasking asks how it ended, and if found, where, by whom and when; the position comes from a crew "Subject found" report. The distance from the planning point is worked out on save. It can be skipped and edited later in History, and it appears in the report and the timeline. `GET /api/outcomes.csv` exports it anonymised: no names, positions or notes, month not date, age in ten-year bands.
+  - Migration 9 adds the target columns and the outcomes table.
 - **Incident contacts** (backlog item 7). A Contacts panel on the console holds the agencies and people involved in an incident: Gardaí, MRCC, ambulance, fire, helicopter, RNLI, other units, next of kin and the reporting person. Each has a phone number with tap-to-call and copy, their reference (such as a PULSE number) and notes.
   - **Station directory:** standing contacts are kept under Settings → Station contacts and added to an incident in one click.
   - **Call log:** each entry records direction (called them, they called, note), the contact and what was said. It goes into the history timeline and the report.

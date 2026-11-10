@@ -329,11 +329,11 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
   });
 
   // ---------------------------------------------------------- targets
-  app.post<{ Params: { id: string }; Body: { name?: string; kind?: TargetKind; geometry?: unknown; notes?: string; priority?: number; teamId?: number | null } }>('/api/incidents/:id/targets', { preHandler: manager }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { name?: string; kind?: TargetKind; geometry?: unknown; notes?: string; priority?: number; teamId?: number | null; segmentId?: string } }>('/api/incidents/:id/targets', { preHandler: manager }, async (req, reply) => {
     try {
       const p = req.principal!;
       const b = req.body ?? {};
-      const target = search.createTarget(req.params.id, { name: b.name, kind: b.kind as TargetKind, geometry: b.geometry, notes: b.notes, priority: b.priority, teamId: b.teamId }, p.kind === 'user' ? p.userId : undefined);
+      const target = search.createTarget(req.params.id, { name: b.name, kind: b.kind as TargetKind, geometry: b.geometry, notes: b.notes, priority: b.priority, teamId: b.teamId, segmentId: b.segmentId }, p.kind === 'user' ? p.userId : undefined);
       audit.log(p, req.ip, 'target.created', { type: 'target', id: target.id }, { name: target.name, kind: target.kind, teamId: target.teamId });
       return { target };
     } catch (e) {
@@ -341,10 +341,10 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     }
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; geometry?: unknown; notes?: string; status?: TargetStatus; priority?: number; teamId?: number | null } }>('/api/targets/:id', { preHandler: manager }, async (req, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; geometry?: unknown; notes?: string; status?: TargetStatus; priority?: number; teamId?: number | null; pod?: number | null } }>('/api/targets/:id', { preHandler: manager }, async (req, reply) => {
     try {
       const target = search.updateTarget(Number(req.params.id), req.body ?? {});
-      audit.log(req.principal, req.ip, 'target.updated', { type: 'target', id: target.id }, { status: target.status, teamId: target.teamId });
+      audit.log(req.principal, req.ip, 'target.updated', { type: 'target', id: target.id }, { status: target.status, teamId: target.teamId, pod: req.body?.pod ?? undefined });
       return { target };
     } catch (e) {
       return bad(reply, e);
@@ -437,12 +437,12 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
 
   // ---------------------------------------------------------- crew in the field
   /** A team member starts or finishes their own team's target (the console sees it at once). */
-  app.post<{ Params: { id: string }; Body: { status?: string } }>('/api/targets/:id/progress', { preHandler: member }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { status?: string; pod?: number } }>('/api/targets/:id/progress', { preHandler: member }, async (req, reply) => {
     const p = req.principal!;
     if (p.kind !== 'user') return bad(reply, 'forbidden', 403);
     try {
-      const target = search.crewTargetProgress(Number(req.params.id), p.userId, String(req.body?.status ?? ''));
-      audit.log(p, req.ip, 'target.updated', { type: 'target', id: target.id }, { status: target.status, by: 'crew' });
+      const target = search.crewTargetProgress(Number(req.params.id), p.userId, String(req.body?.status ?? ''), req.body?.pod === undefined ? undefined : Number(req.body.pod));
+      audit.log(p, req.ip, 'target.updated', { type: 'target', id: target.id }, { status: target.status, by: 'crew', pod: target.status === 'done' ? target.pod : undefined });
       return { target };
     } catch (e) {
       const code = (e as { code?: string }).code;
@@ -461,6 +461,33 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     } catch (e) {
       return bad(reply, e);
     }
+  });
+
+  /** What the team's tracks say about a target's coverage, and the POD that suggests. */
+  app.get<{ Params: { id: string } }>('/api/targets/:id/coverage', { preHandler: member }, async (req, reply) => {
+    const c = search.targetCoverage(Number(req.params.id));
+    return c ? { coverage: c } : bad(reply, 'coverage is worked out for area targets with a team', 404);
+  });
+
+  // ---------------------------------------------------------- outcomes
+  app.get<{ Params: { id: string } }>('/api/incidents/:id/outcome', { preHandler: manager }, async (req, reply) => {
+    if (!search.incidentById(req.params.id)) return bad(reply, 'incident not found', 404);
+    return { outcome: search.outcome(req.params.id) ?? null };
+  });
+  app.put<{ Params: { id: string }; Body: { outcome?: string; foundAt?: string | null; lat?: number | null; lon?: number | null; locationType?: string | null; foundBy?: string | null; notes?: string | null } }>('/api/incidents/:id/outcome', { preHandler: manager }, async (req, reply) => {
+    try {
+      const o = search.setOutcome(req.params.id, req.body ?? {}, req.principal?.kind === 'user' ? req.principal.userId : undefined);
+      audit.log(req.principal, req.ip, 'outcome.recorded', { type: 'incident', id: req.params.id }, { outcome: o.outcome, distanceKm: o.distanceKm, locationType: o.locationType });
+      return { outcome: o };
+    } catch (e) {
+      return bad(reply, e, /not found/.test(String((e as Error).message)) ? 404 : 400);
+    }
+  });
+  /** Anonymised outcomes for the evidence base: profile, distance, where found, how long. */
+  app.get('/api/outcomes.csv', { preHandler: manager }, async (req, reply) => {
+    audit.log(req.principal, req.ip, 'outcomes.exported', undefined);
+    reply.header('content-disposition', 'attachment; filename="search-outcomes.csv"').type('text/csv; charset=utf-8');
+    return search.outcomesCsv();
   });
 
   app.delete<{ Params: { id: string } }>('/api/targets/:id', { preHandler: manager }, async (req, reply) => {

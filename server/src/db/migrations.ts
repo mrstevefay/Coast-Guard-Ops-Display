@@ -288,4 +288,24 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX contact_log_incident ON contact_log(incident_id, at);
   `,
+  // 9 — search outcomes and probability of detection. A target made from a terrain segment keeps
+  // its segment id; a searched target keeps its POD, so the plan can move probability to the
+  // segments not yet searched. Each incident can record how it ended, to build Irish evidence.
+  `
+  ALTER TABLE targets ADD COLUMN segment_id TEXT;
+  ALTER TABLE targets ADD COLUMN pod REAL;
+  CREATE TABLE incident_outcomes (
+    incident_id TEXT PRIMARY KEY REFERENCES incidents(id) ON DELETE CASCADE,
+    outcome TEXT NOT NULL CHECK (outcome IN ('found-well','found-injured','found-deceased','not-found','located-elsewhere','other')),
+    found_at TEXT,
+    lat REAL,
+    lon REAL,
+    distance_km REAL,
+    location_type TEXT,
+    found_by TEXT,
+    notes TEXT,
+    recorded_at TEXT NOT NULL,
+    recorded_by INTEGER
+  );
+  `,
 ];

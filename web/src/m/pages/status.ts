@@ -1,4 +1,5 @@
-import { FIND_LABEL, FIND_TYPES, POINT_KIND_LABEL, type FindType } from '../../../../shared/types';
+import { FIND_LABEL, FIND_TYPES, POINT_KIND_LABEL, type FindType, type TargetCoverage } from '../../../../shared/types';
+import { POD_LEVELS } from '../../../../shared/searchtheory';
 import { profileBySlug } from '../../../../shared/lpb/index';
 import type { IncidentSubject, ResponseStatus, SearchIncident } from '../../../../shared/types';
 import { get, post, put } from '../../api';
@@ -60,6 +61,10 @@ function subjectCard(inc: SearchIncident): string {
     <p class="muted small">Shared with crew only. Do not forward.</p>
   </details>`;
 }
+
+/** "How thorough was it?" asked for this target; the tracks' suggestion per target. */
+let podFor: number | undefined;
+const podHint = new Map<number, TargetCoverage>();
 
 /** Report-a-find form state; kept across re-renders. */
 let findOpen = false;
@@ -127,9 +132,14 @@ export function renderStatus(root: HTMLElement): void {
     targetCard = targets.length
       ? `<section class="card my-target" style="--team:${esc(team.colour)}"><div class="k">${targets.length > 1 ? 'YOUR TARGETS' : 'YOUR TARGET'}</div>${targets.map((t) => {
           const [lon, lat] = anchorOf(t.geometry);
-          const step = t.status === 'in-progress'
-            ? `<button class="btn primary wide" data-action="target-step" data-id="${t.id}" data-status="done">AREA SEARCHED</button>`
-            : `<button class="btn primary wide" data-action="target-step" data-id="${t.id}" data-status="in-progress">START SEARCH</button>`;
+          const hint = podHint.get(t.id);
+          const step = podFor === t.id
+            ? `<div class="pod-ask"><div class="k">HOW THOROUGH WAS IT?</div>${hint && hint.trackM > 0 ? `<p class="muted small">Your tracks suggest about ${Math.round(hint.pod * 100)} %.</p>` : ''}
+                <div class="pod-grid">${POD_LEVELS.map((l) => `<button class="btn ${hint && Math.abs(hint.pod - l.pod) < 0.1 ? 'primary' : 'ghost'}" data-action="pod-pick" data-id="${t.id}" data-pod="${l.pod}">${esc(l.label)}<small>${Math.round(l.pod * 100)} %</small></button>`).join('')}</div>
+                <button class="btn ghost small" data-action="pod-cancel">Not finished yet</button></div>`
+            : t.status === 'in-progress'
+              ? `<button class="btn primary wide" data-action="pod-open" data-id="${t.id}">AREA SEARCHED</button>`
+              : `<button class="btn primary wide" data-action="target-step" data-id="${t.id}" data-status="in-progress">START SEARCH</button>`;
           return `<div class="target-row"><div><b>${esc(t.name)}</b> <span class="badge-s ${t.status === 'in-progress' ? 'amber' : 'grey'}">${t.status === 'in-progress' ? 'searching' : esc(t.status)}</span></div>${t.notes ? `<div class="muted small">${esc(t.notes)}</div>` : ''}${place(lat, lon)}${step}</div>`;
         }).join('')}<div class="muted small">Sweep ${team.searchWidthM} m each side</div>
         <button class="btn ghost wide" data-action="find-open">Report a find</button></section>`
@@ -176,6 +186,22 @@ export function renderStatus(root: HTMLElement): void {
       (el as HTMLButtonElement).disabled = true;
       await post(`/api/targets/${el.dataset.id}/progress`, { status: el.dataset.status });
       toast(el.dataset.status === 'done' ? 'Area searched: the manager can see it' : 'Search started');
+    },
+    'pod-open': (el) => {
+      podFor = Number(el.dataset.id);
+      store.notify();
+      get<{ coverage: TargetCoverage }>(`/api/targets/${podFor}/coverage`).then((r) => { podHint.set(podFor!, r.coverage); store.notify(); }).catch(() => {});
+    },
+    'pod-cancel': () => { podFor = undefined; store.notify(); },
+    'pod-pick': async (el) => {
+      root.querySelectorAll<HTMLButtonElement>('[data-action=pod-pick]').forEach((b) => (b.disabled = true));
+      try {
+        await post(`/api/targets/${el.dataset.id}/progress`, { status: 'done', pod: Number(el.dataset.pod) });
+        podFor = undefined;
+        toast('Area searched: the manager can see it');
+      } finally {
+        store.notify();
+      }
     },
     'find-open': () => { findOpen = true; findType = undefined; findNote = ''; store.notify(); window.scrollTo({ top: 0 }); },
     'find-cancel': () => { findOpen = false; store.notify(); },

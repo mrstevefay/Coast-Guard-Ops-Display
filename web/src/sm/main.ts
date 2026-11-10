@@ -1,7 +1,7 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import { MANAGER_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
+import { MANAGER_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type IncidentOutcome, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
 import { ApiError, get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -10,11 +10,12 @@ import { toast } from '../m/ui';
 import { WsClient } from '../ws';
 import { TargetDrawing, type DrawKind } from './draw';
 import { historyMapResize, leaveHistory, renderHistory } from './history';
-import { closeModal, confirmBox, modal, modalOpen } from './modal';
+import { closeModal, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
-import { GROUND_NAME, renderSidebar, segmentToTarget, segmentsTaken } from './sidebar';
+import { currentPoa, GROUND_NAME, renderSidebar, segmentToTarget, segmentsTaken } from './sidebar';
 import { attachLocationSearch, type LocationPick } from './locate';
 import { contactsCount, contactsOnUpdate, contactsOpen, toggleContacts } from './contacts';
+import { openOutcome } from './outcome';
 import maplibregl from 'maplibre-gl';
 import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
 
@@ -358,7 +359,7 @@ function openShapeCard(hit: { kind: 'target'; id: number } | { kind: 'segment'; 
     if (!seg) return;
     const taken = segmentsTaken().has(seg.id);
     el.innerHTML = `<b>${esc(seg.id)} · ${esc(GROUND_NAME[seg.dominant] ?? seg.dominant)}</b>
-      <div class="muted small">${seg.areaKm2 < 1 ? `${Math.round(seg.areaKm2 * 100)} ha` : `${seg.areaKm2.toFixed(1)} km²`} · POA <b class="amber">${seg.poaPct} %</b> · ${esc(seg.band)}</div>
+      <div class="muted small">${seg.areaKm2 < 1 ? `${Math.round(seg.areaKm2 * 100)} ha` : `${seg.areaKm2.toFixed(1)} km²`} · POA <b class="amber">${currentPoa(cs.s.searchArea!.area!).get(seg.id)?.nowPct ?? seg.poaPct} %</b> · ${esc(seg.band)}</div>
       ${taken ? '<div class="small muted">Already a target</div>' : `<select id="sc-assign"><option value="">Assign…</option>${teamOptions()}<option value="none">Target, no team yet</option></select>`}`;
     el.querySelector<HTMLSelectElement>('#sc-assign')?.addEventListener('change', async (ev) => {
       const v = (ev.target as HTMLSelectElement).value;
@@ -420,8 +421,11 @@ function renderTop(): void {
       actions.querySelector('#contacts-btn')!.addEventListener('click', () => { toggleContacts(); renderTop(); });
       const close = document.getElementById('sm-close')!;
       close.innerHTML = `<button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button>`;
+      // closing asks how it ended: the outcome builds the evidence base (skippable, editable in History)
       close.querySelector('#standdown')!.addEventListener('click', async () => {
-        if (await confirmBox(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.', tasking ? 'Close tasking' : 'Stand down')) await post(`/api/incidents/${inc.id}/close`);
+        const label = tasking ? 'Close tasking' : 'Stand down';
+        const existing = await get<{ outcome: IncidentOutcome | null }>(`/api/incidents/${inc.id}/outcome`).then((r) => r.outcome ?? undefined).catch(() => undefined);
+        openOutcome({ incidentId: inc.id, points: cs.s.search?.incident?.points ?? [], existing, closing: { label, close: async () => { await post(`/api/incidents/${inc.id}/close`); } } });
       });
     }
     const n = contactsCount();
