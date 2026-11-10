@@ -1,7 +1,7 @@
 import maplibregl, { type GeoJSONSource, type ImageSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { POINT_KIND_SHORT, type DashboardState, type Fix, type PlanningPointRow, type SearchAreaResult, type SearchSnapshot } from '../../shared/types';
-import { declutter, type Dot, type LabelIn } from '../../shared/declutter';
+import { declutter, groupOverlapping, type Dot, type LabelIn } from '../../shared/declutter';
 import { addSearchLayers, emptyFC, setSearchData, tracksFC, type SEARCH_LAYER_IDS } from './search/layers';
 
 /** Great-circle ring polygon around a point, radius in km. */
@@ -238,11 +238,17 @@ export class OpsMap {
       el.textContent = text;
       el.style.setProperty('--team', colour);
       tagLabel(el, prio, 'top', [0, offsetY], dotR);
+      el.dataset.text = text;
       this.searchMarkers.push(new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, offsetY] }).setLngLat([lon, lat]).addTo(m));
+      return el;
     };
     for (const f of Object.values(search.latest)) {
       const team = search.teams.find((t) => t.id === f.teamId);
-      mark(f.lon, f.lat, f.callsign ?? f.name.split(' ')[0], 'map-label-team', team?.colour ?? '#9fb3c8', 12, 2, 10);
+      const el = mark(f.lon, f.lat, f.callsign ?? f.name.split(' ')[0], 'map-label-team', team?.colour ?? '#9fb3c8', 12, 2, 10);
+      if (team) {
+        el.dataset.team = String(team.id); // crew of one team close together share one label
+        el.dataset.teamName = team.name;
+      }
     }
     for (const t of search.targets) {
       if (t.status === 'cancelled') continue;
@@ -355,10 +361,12 @@ export class OpsMap {
     const m = this.map;
     if (!m) return;
     const { width, height } = m.getContainer().getBoundingClientRect();
-    const items: LabelIn[] = [], owners: maplibregl.Marker[] = [], dots: Dot[] = [];
+    type Item = LabelIn & { mk: maplibregl.Marker; group?: string; shift?: [number, number] };
+    const all: Item[] = [], dots: Dot[] = [];
     for (const mk of [...this.markers, ...this.searchMarkers, ...this.behaviourMarkers, ...this.segmentMarkers]) {
       const el = mk.getElement();
       if (!el.dataset.prio || el.style.display === 'none') continue;
+      if (el.dataset.text !== undefined && el.textContent !== el.dataset.text) el.textContent = el.dataset.text; // undo a merge
       const p = m.project(mk.getLngLat());
       const base: [number, number] = [Number(el.dataset.ox), Number(el.dataset.oy)];
       if (p.x < -300 || p.y < -300 || p.x > width + 300 || p.y > height + 300) {
@@ -367,14 +375,27 @@ export class OpsMap {
         continue;
       }
       const dotR = Number(el.dataset.dot ?? 0);
-      if (dotR) dots.push({ x: p.x, y: p.y, r: dotR, owner: items.length });
-      items.push({ x: p.x, y: p.y, w: el.offsetWidth, h: el.offsetHeight, anchor: el.dataset.anchor as LabelIn['anchor'], offset: base, prio: Number(el.dataset.prio), keep: el.dataset.keep === '1' });
-      owners.push(mk);
+      if (dotR) dots.push({ x: p.x, y: p.y, r: dotR, owner: all.length });
+      all.push({ mk, x: p.x, y: p.y, w: el.offsetWidth, h: el.offsetHeight, anchor: el.dataset.anchor as LabelIn['anchor'], offset: base, prio: Number(el.dataset.prio), keep: el.dataset.keep === '1', group: el.dataset.team });
     }
-    declutter(items, dots, { w: width, h: height }).forEach((r, i) => {
-      const el = owners[i].getElement();
+    // crew of one team whose labels would overlap: one label, "Alpha ×3", centred on them
+    const merged = new Set<number>();
+    for (const c of groupOverlapping(all)) {
+      const lead = all[c[0]], el = lead.mk.getElement();
+      const cx = c.reduce((t, i) => t + all[i].x, 0) / c.length, cy = c.reduce((t, i) => t + all[i].y, 0) / c.length;
+      el.textContent = `${el.dataset.teamName ?? 'Team'} ×${c.length}`;
+      Object.assign(lead, { x: cx, y: cy, w: el.offsetWidth, h: el.offsetHeight, shift: [cx - lead.x, cy - lead.y] });
+      for (const i of c.slice(1)) merged.add(i);
+      for (const d of dots) if (d.owner !== undefined && c.includes(d.owner)) d.owner = c[0]; // may sit over its own crew
+    }
+    const idx: number[] = [];
+    all.forEach((it, i) => (merged.has(i) ? (it.mk.getElement().style.visibility = 'hidden') : idx.push(i)));
+    const remap = new Map(idx.map((i, k) => [i, k]));
+    const ds = dots.map((d) => ({ ...d, owner: d.owner === undefined ? undefined : remap.get(d.owner) ?? -1 }));
+    declutter(idx.map((i) => all[i]), ds, { w: width, h: height }).forEach((r, k) => {
+      const it = all[idx[k]], el = it.mk.getElement();
       el.style.visibility = r ? '' : 'hidden';
-      if (r) owners[i].setOffset(r.offset);
+      if (r) it.mk.setOffset([r.offset[0] + (it.shift?.[0] ?? 0), r.offset[1] + (it.shift?.[1] ?? 0)]);
     });
   }
   private heatOn = true;

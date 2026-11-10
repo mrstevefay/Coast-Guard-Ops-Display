@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { declutter, type LabelIn } from '../../shared/declutter.js';
+import { declutter, groupOverlapping, type LabelIn } from '../../shared/declutter.js';
 
 const at = (x: number, y: number, prio: number, extra: Partial<LabelIn> = {}): LabelIn => ({ x, y, w: 100, h: 20, anchor: 'top', offset: [0, 14], prio, ...extra });
 
@@ -46,5 +46,17 @@ describe('map label placement', () => {
   it('fixed labels (segments) either show in place or hide', () => {
     const r = declutter([at(300, 300, 0), at(300, 320, 8, { anchor: 'center', offset: [0, 0], w: 30, h: 16 })]);
     expect(r[1]).toBeNull();
+  });
+
+  it('groups crew of one team whose labels would overlap, not other teams or distant crew', () => {
+    const l = [
+      { ...at(200, 200, 2), group: '1' },
+      { ...at(230, 210, 2), group: '1' },
+      { ...at(320, 215, 2), group: '1' }, // overlaps the second only: same cluster
+      { ...at(210, 205, 2), group: '2' },
+      { ...at(600, 500, 2), group: '1' },
+      at(205, 200, 5),
+    ];
+    expect(groupOverlapping(l)).toEqual([[0, 1, 2]]);
   });
 });

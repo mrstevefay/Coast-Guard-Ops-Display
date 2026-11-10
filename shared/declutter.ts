@@ -68,3 +68,23 @@ export function declutter(labels: LabelIn[], dots: Dot[] = [], view?: { w: numbe
   }
   return out;
 }
+
+/**
+ * Labels of one group (a team) whose usual spots would overlap, joined into clusters: a cluster is
+ * every label linked to another by an overlap, so three crew walking a line in step form one.
+ * Returns the clusters of two or more, as indexes into `labels`.
+ */
+export function groupOverlapping(labels: (LabelIn & { group?: string })[]): number[][] {
+  const parent = labels.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const boxes = labels.map((l) => boxOf(l, l.offset));
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i].group === undefined) continue;
+    for (let j = i + 1; j < labels.length; j++) {
+      if (labels[j].group === labels[i].group && hits(boxes[i], boxes[j])) parent[find(j)] = find(i);
+    }
+  }
+  const byRoot = new Map<number, number[]>();
+  labels.forEach((l, i) => { if (l.group !== undefined) byRoot.set(find(i), [...(byRoot.get(find(i)) ?? []), i]); });
+  return [...byRoot.values()].filter((c) => c.length > 1);
+}
