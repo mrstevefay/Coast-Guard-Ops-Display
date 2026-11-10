@@ -108,3 +108,16 @@ the internet.
 
 **Acceptance.** A merge to main deploys through the tailnet, and `nc -zv 192.248.159.129 22`
 from outside the tailnet times out.
+
+## 7. Incident contacts: other agencies and next of kin
+
+**Why.** During a search the manager rings and is rung by the Gardaí, MRCC Dublin, Dublin Fire Brigade, the Coast Guard helicopter, neighbouring units and the family. Today those numbers and names live on paper or in someone's phone, and the log of who was told what is lost at stand-down.
+
+**Plan.**
+1. Per-incident contacts: role (Garda, MRCC, ambulance, other unit, next of kin, reporting person, other), name, organisation, phone, notes, and a reference such as the Garda PULSE or incident number.
+2. A station directory of standing contacts (Howth Garda station, MRCC Dublin, Dublin Fire Brigade, Rescue 116, RNLI Howth), so most entries are one click from a list rather than typed.
+3. A short contact log per incident: time, who, which way, one line of what was said. It appears in the history timeline and the end-of-mission report.
+4. **Privacy:** next of kin and reporting person are private like home and significant places. The console and the report show them; display keys and crew phones never receive them. Agency contacts may show to crew leaders. Audit every view and change.
+5. Retention follows the incident record. Next-of-kin details are cleared once the incident is closed and the report filed, per GDPR data minimisation.
+
+**Acceptance.** From a test tasking, add the Garda contact from the directory and a next of kin by hand, log two calls, and see both in the report. The TV and a crew phone show neither the next of kin nor the call log.

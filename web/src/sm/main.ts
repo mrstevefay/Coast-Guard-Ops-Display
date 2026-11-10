@@ -13,7 +13,7 @@ import { historyMapResize, leaveHistory, renderHistory } from './history';
 import { closeModal, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
 import { renderSidebar } from './sidebar';
-import { cs } from './state';
+import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
 
 const app = document.getElementById('app')!;
 let ws: WsClient | undefined;
@@ -58,6 +58,7 @@ function start(): void {
       <div class="sm-actions" id="sm-actions"></div>
       <a class="btn-sm sm-view" id="sm-history-btn" href="#history" title="Past taskings and callouts: replay and reports">History</a>
       <button class="btn-sm sm-view" id="sm-view" title="Settings & administration">⚙ Settings</button>
+      <div class="sm-close" id="sm-close"></div>
     </header>
     <aside class="sm-side" id="sm-side"></aside>
     <main class="sm-map" id="sm-map-wrap">
@@ -177,6 +178,7 @@ function render(): void {
     pickPoint: (kind, pointId) => setPicking(cs.s.picking && cs.s.picking.kind === kind && cs.s.picking.pointId === pointId ? undefined : { kind, pointId }),
     fitRings: () => map?.fitBehaviourRings(),
   });
+  presetForTab();
   renderLayers();
   renderStatus();
   if (cs.s.layers.follow && cs.s.search?.incident) map.fitAll(s, cs.s.search);
@@ -284,8 +286,10 @@ function renderTop(): void {
     const modeKey = `${tasking ? 'tasking' : 'callout'}:${inc.id}`;
     if (actions.dataset.mode !== modeKey) {
       actions.dataset.mode = modeKey;
-      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
-      actions.querySelector('#standdown')!.addEventListener('click', async () => {
+      actions.innerHTML = `<a class="btn-sm" href="/api/incidents/${esc(inc.id)}/export.geojson" download>Export</a><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      const close = document.getElementById('sm-close')!;
+      close.innerHTML = `<button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button>`;
+      close.querySelector('#standdown')!.addEventListener('click', async () => {
         if (confirm(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.')) await post(`/api/incidents/${inc.id}/close`);
       });
     }
@@ -294,19 +298,43 @@ function renderTop(): void {
     if (actions.dataset.mode !== 'standby') {
       actions.dataset.mode = 'standby';
       actions.innerHTML = `<button class="btn-sm primary" id="new-incident">New tasking</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;
+      document.getElementById('sm-close')!.innerHTML = '';
       actions.querySelector('#new-incident')!.addEventListener('click', () => openIncidentModal());
     }
   }
 }
 
+/** Layer bar: three presets for the stages of a search, plus a menu of single layers. */
 function renderLayers(): void {
   const el = document.getElementById('layer-panel')!;
-  if (el.dataset.built) return;
-  el.dataset.built = '1';
   const L = cs.s.layers;
-  el.innerHTML = (Object.keys(L) as (keyof typeof L)[]).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}/> ${k[0].toUpperCase() + k.slice(1)}</label>`).join('') + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`;
-  el.querySelectorAll<HTMLInputElement>('[data-layer]').forEach((c) => c.addEventListener('change', () => { (L as any)[c.dataset.layer!] = c.checked; applyLayers(); }));
+  const key = `${cs.s.preset ?? ''}:${Object.values(L).join('')}`;
+  if (el.dataset.key === key) return;
+  const menuOpen = el.querySelector<HTMLDetailsElement>('details')?.open ?? false;
+  el.dataset.key = key;
+  el.innerHTML = (['plan', 'teams', 'clean'] as const).map((p) => `<button class="mini ${cs.s.preset === p ? 'on' : ''}" data-preset="${p}">${p[0].toUpperCase() + p.slice(1)}</button>`).join('')
+    + `<details class="layer-menu" ${menuOpen ? 'open' : ''}><summary class="mini">Layers ▾</summary><div class="layer-list">${(Object.keys(L) as (keyof typeof L)[]).map((k) => `<label><input type="checkbox" data-layer="${k}" ${L[k] ? 'checked' : ''}/> ${LAYER_LABEL[k]}</label>`).join('')}</div></details>`
+    + `<button class="mini" id="fit-all" title="Fit everything">⤢</button>`;
+  el.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.preset as LayerPreset)));
+  el.querySelectorAll<HTMLInputElement>('[data-layer]').forEach((c) => c.addEventListener('change', () => { (L as any)[c.dataset.layer!] = c.checked; cs.s.preset = undefined; applyLayers(); renderLayers(); }));
   el.querySelector('#fit-all')!.addEventListener('click', () => { if (cs.s.state) map?.fitAll(cs.s.state, cs.s.search); });
+}
+
+function setPreset(p: LayerPreset): void {
+  Object.assign(cs.s.layers, LAYER_PRESETS[p]);
+  cs.s.preset = p;
+  applyLayers();
+  renderLayers();
+}
+
+/** Opening a stage's tab shows that stage's layers, unless the manager has picked layers by hand. */
+let lastTab = cs.s.tab;
+function presetForTab(): void {
+  if (cs.s.tab === lastTab) return;
+  lastTab = cs.s.tab;
+  if (cs.s.preset === undefined) return;
+  const p: LayerPreset | undefined = cs.s.tab === 'behaviour' ? 'plan' : cs.s.tab === 'teams' || cs.s.tab === 'targets' ? 'teams' : undefined;
+  if (p && p !== cs.s.preset) setPreset(p);
 }
 
 function applyLayers(): void {
@@ -316,7 +344,10 @@ function applyLayers(): void {
   map.setLayerVisible('coverage-line', L.coverage);
   for (const id of ['targets-fill', 'targets-line', 'targets-point'] as const) map.setLayerVisible(id, L.targets);
   for (const id of ['behaviour-fill', 'behaviour-line'] as const) map.setLayerVisible(id, L.behaviour);
-  for (const id of ['area-fill', 'area-line', 'segment-line', 'corridor-line'] as const) map.setLayerVisible(id, L.terrain);
+  map.setLayerVisible('area-line', L.terrain);
+  map.setLayerVisible('corridor-line', L.terrain);
+  map.setLayerVisible('area-fill', L.terrain && L.areaFill);
+  map.setLayerVisible('segment-line', L.segments);
   map.setLayerVisible('heat', L.heat);
   map.setLayerVisible('ais-dot', L.ais);
   map.setLayerVisible('labels', L.labels);
@@ -410,11 +441,11 @@ function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
 
 function openIncidentModal(): void {
   const root = modal(`<h3>New tasking</h3>
-    <p class="muted">Opens the search (responders, teams, targets, tracking) for the crew app and this console. The TV stays in standby and nobody is paged unless you tick the callout box.</p>
+    <p class="muted">Opens the search on this console and the crew app. Nobody is paged unless you tick callout.</p>
     <form id="if">
       <label>Tasking title / details <textarea name="text" rows="3" required placeholder="e.g. Missing walker, Howth Head cliff path — request from Gardaí"></textarea></label>
       <label>Position (optional) <input name="pos" placeholder="53.4105, -6.0550" /></label>
-      <label class="check"><input type="checkbox" name="callout" /> Also raise a <b>callout</b>: TV to callout mode, crew app alert, auto stand-down timer (as the pager does)</label>
+      <label class="check"><input type="checkbox" name="callout" /><span>Also raise a <b>callout</b>: TV to callout mode, crew app alert, auto stand-down timer, as the pager does</span></label>
       <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary" id="start">Start tasking</button></div>
     </form>`);
   root.querySelector('#cancel')!.addEventListener('click', closeModal);

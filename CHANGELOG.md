@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **UX phase 1: reorder and trim** (no behaviour change).
+  - **Console Plan tab:** opens with the ring distances, one line each on ground area, where found and outcome, then live warnings, the first four tasks and the top five segments. Every statistic and source now sits in one collapsed Evidence and sources section.
+  - **Console map:** Plan, Teams and Clean layer presets, with single layers in a menu. Opening the Plan or Teams tab switches preset. Segment labels show the number only, and only once the square is big enough on screen. Ring labels moved to the east edge.
+  - **Console layout:** tabs are one line (Crew, Teams, Targets, Subject, Plan). Close tasking sits on its own at the far right. Shorter help text.
+  - **Segment targets:** crew see plain names and notes, such as "S1 · Houses and gardens"; the probability stays on the console.
+  - **Crew Status page:** ordered by stage. When alerted: incident then I'm Responding, with tracking setup below. Once tasked, your target comes first. Navigate buttons open the phone's maps app. The subject card is folded to one line, and the responders list became a count linking to Team. The mode badge and timer moved into the header.
+  - **Fixes:** links were unreadable on the dark console, the callout tick box label broke into columns, the subject card showed a duplicate badge, crew map buttons covered the attribution with a gap above the tab bar, and the number and file inputs were unstyled.
 - **Terrain build gives up on busy Overpass servers sooner**: in `auto`, once failed
   requests add up to `overpassBudgetS` (default 300 s), the build switches to the Ireland
   extract instead of splitting and retrying box by box, which could take hours.

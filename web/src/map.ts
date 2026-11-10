@@ -245,7 +245,7 @@ export class OpsMap {
   /**
    * Draw the lost-person-behaviour distance rings around the planning point: each ring
    * is the distance within which `pct` % of that category's subjects were found. Pass no
-   * point or no rings to clear. Labels sit at the north point like the station rings.
+   * point or no rings to clear. Labels sit on the east edge.
    */
   setBehaviourRings(ipp: { lat: number; lon: number } | undefined, rings: { pct: number; km: number }[]): void {
     if (!this.map || !this.ready) return;
@@ -257,12 +257,13 @@ export class OpsMap {
     (m.getSource('behaviour') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features });
     if (!ipp) return;
     for (const r of rings) {
-      const north = ring(ipp.lat, ipp.lon, r.km, 4).geometry.coordinates[0][0];
+      // east edge, just outside the ring: clear of the station to the north and of the point itself
+      const east = ring(ipp.lat, ipp.lon, r.km, 4).geometry.coordinates[0][1];
       const el = document.createElement('div');
       el.className = 'map-label map-label-behaviour';
-      el.textContent = `${r.pct} % · ${r.km} km`;
+      el.textContent = `${r.pct} % · ${r.km < 1 ? `${Math.round(r.km * 1000)} m` : `${r.km} km`}`;
       el.style.display = this.behaviourOn ? '' : 'none';
-      this.behaviourMarkers.push(new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, -14] }).setLngLat([north[0], north[1]]).addTo(m));
+      this.behaviourMarkers.push(new maplibregl.Marker({ element: el, anchor: 'left', offset: [6, 0] }).setLngLat([east[0], east[1]]).addTo(m));
     }
   }
 
@@ -300,9 +301,28 @@ export class OpsMap {
       const lon = ring.reduce((a, p) => a + p[0], 0) / ring.length, lat = ring.reduce((a, p) => a + p[1], 0) / ring.length;
       const el = document.createElement('div');
       el.className = 'map-label map-label-seg';
-      el.textContent = `${s.id} · ${s.poaPct} %`;
-      el.style.display = this.terrainOn ? '' : 'none';
+      el.textContent = s.id; // the probability is in the console list; the map only names the square
+      el.title = `${s.id}: ${s.poaPct} %`;
+      // width of the square in metres, so the label only shows once the square is big enough on screen
+      const lons = ring.map((p) => p[0]);
+      el.dataset.widthM = String((Math.max(...lons) - Math.min(...lons)) * 111_320 * Math.cos((lat * Math.PI) / 180));
       this.segmentMarkers.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lon, lat]).addTo(m));
+    }
+    this.refreshSegmentLabels();
+    if (!this.segZoomHooked) {
+      this.segZoomHooked = true;
+      m.on('zoomend', () => this.refreshSegmentLabels());
+    }
+  }
+  private segZoomHooked = false;
+  /** A segment label shows when its square is at least about 40 px wide at the current zoom. */
+  private refreshSegmentLabels(): void {
+    const m = this.map;
+    if (!m) return;
+    const mPerPx = (78_271.52 * Math.cos((m.getCenter().lat * Math.PI) / 180)) / 2 ** m.getZoom(); // MapLibre: 512 px tiles
+    for (const mk of this.segmentMarkers) {
+      const el = mk.getElement();
+      el.style.display = this.terrainOn && Number(el.dataset.widthM ?? 0) / mPerPx >= 40 ? '' : 'none';
     }
   }
   private heatOn = true;
@@ -348,7 +368,7 @@ export class OpsMap {
     if (id === 'heat') this.heatOn = on;
     if (id === 'segment-line') {
       this.terrainOn = on;
-      for (const mk of this.segmentMarkers) mk.getElement().style.display = on ? '' : 'none';
+      this.refreshSegmentLabels();
     }
     if (id === 'behaviour-line') {
       this.behaviourOn = on;

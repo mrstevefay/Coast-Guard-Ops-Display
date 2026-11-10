@@ -37,7 +37,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 /* sidebar */
 .sm-side { grid-area: side; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); min-height: 0; }
 .tabs-sm { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; border-bottom: 1px solid var(--line); }
-.tabs-sm .tab { background: none; border: 0; color: var(--muted); padding: 10px 0; font-weight: 700; cursor: pointer; border-bottom: 2px solid transparent; font-size: 13px; }
+.tabs-sm .tab { background: none; border: 0; color: var(--muted); padding: 10px 0; font-weight: 700; cursor: pointer; border-bottom: 2px solid transparent; font-size: 13px; white-space: nowrap; }
+.tabs-sm .tab-n { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--panel-2, #1c2733); color: var(--fg); font-size: 11px; }
 .tabs-sm .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .sb-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
@@ -50,7 +51,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 .badge-s.blue { color: var(--blue); border-color: var(--blue); }
 .assign-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .assign-bar.disabled { opacity: 0.5; pointer-events: none; }
-select, input[type='text'], input:not([type]), textarea { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; font-family: inherit; }
+select, input[type='text'], input[type='number'], input[type='search'], input:not([type]), textarea { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; font-family: inherit; }
 .team { border: 1px solid var(--line); border-left: 6px solid var(--team); border-radius: 8px; padding: 8px; background: var(--bg); }
 .team-head { display: flex; align-items: center; gap: 6px; }
 .team-head .dot, .tgroup-head .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--team); }
@@ -254,3 +255,26 @@ select, input[type='text'], input:not([type]), textarea { background: var(--bg);
 .map-label-seg { color: #111; background: rgba(255,255,255,0.9); padding: 0 5px; border-radius: 4px; text-shadow: none; font-size: 11px; font-weight: 800; }
 .seg-table td, .seg-table th { padding: 3px 4px; } .seg-table .nowrap { white-space: nowrap; }
 .corr-key { display: inline-block; width: 16px; height: 0; border-top: 3px dotted #f472b6; vertical-align: middle; margin-right: 6px; }
+
+/* ---- UX phase 1 ---- */
+.sm-close { display: flex; padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--line); }
+.sm-side a:not(.btn-sm), .modal a:not(.btn-sm), .lpb-src a { color: var(--accent); }
+input[type='file'] { color: var(--muted); font-size: 12px; max-width: 100%; }
+input[type='file']::file-selector-button { background: var(--panel-2, #1c2733); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; margin-right: 8px; cursor: pointer; font: inherit; }
+.layer-panel .mini.on { border-color: var(--accent); color: var(--accent); }
+.layer-menu { position: relative; }
+.layer-menu > summary { list-style: none; cursor: pointer; }
+.layer-menu > summary::-webkit-details-marker { display: none; }
+.layer-list { position: absolute; top: calc(100% + 6px); left: 0; background: rgba(20, 28, 38, 0.97); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; min-width: 150px; }
+.lpb-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lpb-head .right { margin-left: auto; }
+.stats.rings b { font-size: 18px; }
+.lpb-sum p { margin: 4px 0; }
+.lpb-live { margin: 10px 0 4px; padding: 6px 10px; border: 1px solid var(--amber); border-radius: 6px; color: var(--amber); background: rgba(245, 165, 36, 0.08); }
+.lpb-live p { margin: 2px 0; }
+.lpb-evidence { margin: 8px 12px 16px; border-top: 1px solid var(--line); padding-top: 8px; }
+.lpb-evidence > summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 700; }
+.lpb-evidence > .lpb { padding-left: 0; padding-right: 0; }
+.seg-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; margin: 4px 0; }
+.lpb-empty p { margin: 0 0 10px; }
+.map-label-behaviour { white-space: nowrap; }
