@@ -1,7 +1,7 @@
 import '../components.css';
 import './sm.css';
 import { buildPlan } from '../../../shared/lpb/index';
-import { POINT_KIND_LABEL, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
+import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Fix, type IncidentSubject, type PlanningPointKind, type Principal, type SearchAreaResult, type Target, type TargetGeometry, type Team, type UserPublic } from '../../../shared/types';
 import { ApiError, get, patch, post, setUnauthorisedHandler } from '../api';
 import { esc, fmtElapsed, fmtTime } from '../format';
 import { OpsMap } from '../map';
@@ -10,9 +10,11 @@ import { toast } from '../m/ui';
 import { WsClient } from '../ws';
 import { TargetDrawing, type DrawKind } from './draw';
 import { historyMapResize, leaveHistory, renderHistory } from './history';
-import { closeModal, modal, modalOpen } from './modal';
+import { closeModal, confirmBox, modal, modalOpen } from './modal';
 import { isSettingsSection, renderSettings } from './settings';
 import { renderSidebar } from './sidebar';
+import { attachLocationSearch, type LocationPick } from './locate';
+import maplibregl from 'maplibre-gl';
 import { cs, LAYER_LABEL, LAYER_PRESETS, type LayerPreset } from './state';
 
 const app = document.getElementById('app')!;
@@ -63,6 +65,7 @@ function start(): void {
     <aside class="sm-side" id="sm-side"></aside>
     <main class="sm-map" id="sm-map-wrap">
       <div class="layer-panel" id="layer-panel"></div>
+      <div class="map-search"><input id="map-search" type="search" placeholder="Search a place or paste a position" aria-label="Search a place or paste a position" /></div>
       <div class="draw-hint" id="draw-hint"></div>
     </main>
     <section class="sm-settings" id="sm-settings"></section>
@@ -89,6 +92,10 @@ function start(): void {
     reloadAfterMs: 0,
   });
   ws.start();
+  attachLocationSearch(document.getElementById('map-search') as HTMLInputElement, {
+    near: () => cs.s.search?.incident?.ipp ?? (cs.s.state ? { lat: cs.s.state.station.lat, lon: cs.s.state.station.lon } : undefined),
+    onPick: (p) => placeFromSearch(p),
+  });
   cs.subscribe(render);
   document.addEventListener('keydown', onKey);
   setInterval(() => renderTop(), 1000);
@@ -154,7 +161,8 @@ function render(): void {
         const inc = cs.s.search?.incident;
         setPicking(undefined);
         if (!inc) return;
-        void placePoint(inc.id, pick, e.lngLat.lat, e.lngLat.lng);
+        if (pick.pointId) void movePoint(pick, e.lngLat.lat, e.lngLat.lng);
+        else openPointBox(e.lngLat.lat, e.lngLat.lng, pick.kind);
       });
       applyLayers();
     });
@@ -240,35 +248,87 @@ function setPicking(pick: { kind: PlanningPointKind; pointId?: number } | undefi
   document.getElementById('sm-map-wrap')?.classList.toggle('picking', Boolean(pick));
   const hint = document.getElementById('draw-hint');
   if (hint && pick) {
-    hint.textContent = `Click the map to ${pick.pointId ? 'move' : 'place'}: ${POINT_KIND_LABEL[pick.kind]} (Esc to cancel)`;
+    hint.textContent = `Click the map, or search above, to ${pick.pointId ? 'move' : 'place'}: ${POINT_KIND_LABEL[pick.kind]} (Esc to cancel)`;
+    if (!pick.pointId) (document.getElementById('map-search') as HTMLInputElement | null)?.focus();
     hint.style.display = 'block';
   } else if (hint && !pick && drawing?.mode === 'static') hint.style.display = 'none';
   cs.notify();
 }
 
-const POINT_PROMPT: Record<PlanningPointKind, string> = {
-  lkp: 'Label for the last known position (optional, e.g. "Car park", "Phone ping")',
-  pls: 'Label for the place last seen (optional, e.g. "Seen by dog walker")',
-  home: 'Label for home (optional, e.g. "Home", "Care home")',
-  vehicle: 'Label for the vehicle (optional, e.g. "Silver Golf 12-D-…")',
-  significant: 'What is this place to them? (e.g. "Favourite bench", "Where his wife\'s ashes were scattered")',
-  other: 'Label for this point',
+const POINT_HINT: Record<PlanningPointKind, string> = {
+  lkp: 'Label, e.g. Car park, Phone ping',
+  pls: 'Label, e.g. Seen by dog walker',
+  home: 'Label, e.g. Home, Care home',
+  vehicle: 'Label, e.g. Silver Golf 12-D-…',
+  significant: 'What is this place to them?',
+  other: 'Label',
 };
 
-async function placePoint(incidentId: string, pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
+async function movePoint(pick: { kind: PlanningPointKind; pointId?: number }, lat: number, lon: number): Promise<void> {
   try {
-    if (pick.pointId) {
-      await patch(`/api/points/${pick.pointId}`, { lat, lon });
-      toast(`${POINT_KIND_LABEL[pick.kind]} moved`);
-      return;
-    }
-    const label = prompt(POINT_PROMPT[pick.kind], '');
-    if (label === null) return; // cancelled
-    await post(`/api/incidents/${incidentId}/points`, { kind: pick.kind, label, lat, lon });
-    toast(`${POINT_KIND_LABEL[pick.kind]} set`);
+    await patch(`/api/points/${pick.pointId}`, { lat, lon });
+    toast(`${POINT_KIND_LABEL[pick.kind]} moved`);
   } catch (err) {
     toast(err instanceof Error ? err.message : 'failed', true);
   }
+}
+
+let pointBox: maplibregl.Popup | undefined;
+
+/**
+ * The label box for a new point, opened on the map where it goes: kind, label and note in one
+ * small form. Enter saves, Escape cancels. Replaces the browser's prompt box.
+ */
+function openPointBox(lat: number, lon: number, kind: PlanningPointKind, label = ''): void {
+  const m = map?.getMap();
+  const inc = cs.s.search?.incident;
+  if (!m || !inc) return;
+  pointBox?.remove();
+  let chosen = kind;
+  const el = document.createElement('form');
+  el.className = 'pt-box';
+  const chips = () => PLANNING_POINT_KINDS.map((k) => `<button type="button" class="pt-chip k-${k} ${k === chosen ? 'on' : ''}" data-k="${k}" title="${esc(POINT_KIND_LABEL[k])}">${esc(POINT_KIND_SHORT[k])}</button>`).join('');
+  el.innerHTML = `<div class="pt-box-kind"><b id="pt-kind-name">${esc(POINT_KIND_LABEL[chosen])}</b></div>
+    <div class="pt-chips">${chips()}</div>
+    <input name="label" maxlength="120" value="${esc(label)}" placeholder="${esc(POINT_HINT[chosen])}" />
+    <input name="note" maxlength="500" placeholder="Note (optional)" />
+    <div class="pt-box-actions"><button type="submit" class="btn-sm primary">Save</button><button type="button" class="btn-sm" data-cancel>Cancel</button><span class="muted small">Enter saves</span></div>`;
+  const wireChips = () => el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
+    chosen = b.dataset.k as PlanningPointKind;
+    el.querySelector('.pt-chips')!.innerHTML = chips();
+    el.querySelector('#pt-kind-name')!.textContent = POINT_KIND_LABEL[chosen];
+    (el.querySelector('input[name=label]') as HTMLInputElement).placeholder = POINT_HINT[chosen];
+    wireChips();
+  }));
+  wireChips();
+  const close = () => { pointBox?.remove(); pointBox = undefined; };
+  el.querySelector('[data-cancel]')!.addEventListener('click', close);
+  el.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } });
+  el.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(el);
+    try {
+      await post(`/api/incidents/${inc.id}/points`, { kind: chosen, label: String(f.get('label') ?? '').trim() || null, note: String(f.get('note') ?? '').trim() || null, lat, lon });
+      toast(`${POINT_KIND_LABEL[chosen]} set`);
+      close();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'failed', true);
+    }
+  });
+  pointBox = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px', className: 'pt-popup', offset: 10 }).setLngLat([lon, lat]).setDOMContent(el).addTo(m);
+  setTimeout(() => (el.querySelector('input[name=label]') as HTMLInputElement).focus(), 0);
+}
+
+/** A search result: go there and open the label box, with the kind the manager armed (or the obvious one). */
+function placeFromSearch(p: LocationPick): void {
+  const inc = cs.s.search?.incident;
+  map?.flyTo(p.lon, p.lat, 16);
+  if (!inc) return toast('Open a tasking first: then the search places points', true);
+  const armed = cs.s.picking;
+  if (armed?.pointId) { setPicking(undefined); void movePoint(armed, p.lat, p.lon); return; }
+  const kind: PlanningPointKind = armed?.kind ?? (inc.points?.some((x) => x.kind === 'lkp') ? 'other' : 'lkp');
+  setPicking(undefined);
+  openPointBox(p.lat, p.lon, kind, p.label ?? '');
 }
 
 function renderTop(): void {
@@ -290,7 +350,7 @@ function renderTop(): void {
       const close = document.getElementById('sm-close')!;
       close.innerHTML = `<button class="btn-sm danger" id="standdown">${tasking ? 'Close tasking' : 'Stand down'}</button>`;
       close.querySelector('#standdown')!.addEventListener('click', async () => {
-        if (confirm(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.')) await post(`/api/incidents/${inc.id}/close`);
+        if (await confirmBox(tasking ? 'Close this tasking? Teams are stood down and tracking stops.' : 'Stand down this incident? Teams are stood down and tracking stops.', tasking ? 'Close tasking' : 'Stand down')) await post(`/api/incidents/${inc.id}/close`);
       });
     }
   } else {
@@ -441,25 +501,36 @@ function openTargetModal(kind: DrawKind, geometry: TargetGeometry): void {
 
 function openIncidentModal(): void {
   const root = modal(`<h3>New tasking</h3>
-    <p class="muted">Opens the search on this console and the crew app. Nobody is paged unless you tick callout.</p>
     <form id="if">
-      <label>Tasking title / details <textarea name="text" rows="3" required placeholder="e.g. Missing walker, Howth Head cliff path — request from Gardaí"></textarea></label>
-      <label>Position (optional) <input name="pos" placeholder="53.4105, -6.0550" /></label>
-      <label class="check"><input type="checkbox" name="callout" /><span>Also raise a <b>callout</b>: TV to callout mode, crew app alert, auto stand-down timer, as the pager does</span></label>
-      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary" id="start">Start tasking</button></div>
+      <label>What and where <textarea name="text" rows="3" required autofocus placeholder="e.g. Missing walker, Howth Head cliff path, request from Gardaí"></textarea></label>
+      <label>Last known position <span class="muted small">(optional: set it on the map later)</span>
+        <span class="loc-wrap"><input id="if-pos" type="search" placeholder="Search a place or paste a position" /></span>
+        <span class="small" id="if-pos-read"></span></label>
+      <div class="start-pair">
+        <button type="submit" class="btn-sm primary" data-callout="0"><b>Start tasking</b><small>Console and crew app only. Nobody is paged.</small></button>
+        <button type="submit" class="btn-sm danger" data-callout="1"><b>Raise callout</b><small>Alerts crew, TV to callout mode, auto stand-down.</small></button>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button></div>
     </form>`);
   root.querySelector('#cancel')!.addEventListener('click', closeModal);
-  const cb = root.querySelector<HTMLInputElement>('input[name=callout]')!;
-  const start = root.querySelector<HTMLButtonElement>('#start')!;
-  cb.addEventListener('change', () => { start.textContent = cb.checked ? 'CALLOUT' : 'Start tasking'; start.className = `btn-sm ${cb.checked ? 'danger' : 'primary'}`; });
+  let pos: LocationPick | undefined;
+  const read = root.querySelector<HTMLElement>('#if-pos-read')!;
+  attachLocationSearch(root.querySelector<HTMLInputElement>('#if-pos')!, {
+    near: () => (cs.s.state ? { lat: cs.s.state.station.lat, lon: cs.s.state.station.lon } : undefined),
+    onPick: (p) => {
+      pos = p;
+      read.innerHTML = `Set: <b>${esc(p.label ?? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)}</b> <button type="button" class="mini" id="if-pos-clear">×</button>`;
+      read.querySelector('#if-pos-clear')!.addEventListener('click', () => { pos = undefined; read.innerHTML = ''; });
+    },
+  });
   root.querySelector<HTMLFormElement>('#if')!.addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    const callout = (ev as SubmitEvent).submitter?.getAttribute('data-callout') === '1';
     const f = new FormData(ev.target as HTMLFormElement);
-    const pos = String(f.get('pos') ?? '').split(',').map((x) => Number(x.trim()));
     try {
-      await post('/api/incidents', { text: f.get('text'), callout: cb.checked, lat: pos.length === 2 && Number.isFinite(pos[0]) ? pos[0] : undefined, lon: pos.length === 2 && Number.isFinite(pos[1]) ? pos[1] : undefined });
+      await post('/api/incidents', { text: f.get('text'), callout, lat: pos?.lat, lon: pos?.lon, label: pos?.label });
       closeModal();
-      cs.s.tab = 'responders';
+      cs.s.tab = 'subject';
     } catch (e) {
       toast(e instanceof Error ? e.message : 'failed', true);
     }
@@ -470,6 +541,7 @@ function onKey(ev: KeyboardEvent): void {
   if ((ev.target as HTMLElement).matches('input, textarea, select')) return;
   const k = ev.key.toLowerCase();
   if (k === 'escape' && modalOpen()) return closeModal();
+  if (k === 'escape' && pointBox) { pointBox.remove(); pointBox = undefined; return; }
   if (k === 'escape' && cs.s.picking) return setPicking(undefined);
   if (cs.s.view !== 'ops' || !drawing) return;
   if (k === 'escape') drawing.stopEditing();

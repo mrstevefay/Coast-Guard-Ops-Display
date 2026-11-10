@@ -12,6 +12,7 @@ import { costDistance, nearestPassable } from './dijkstra.js';
 import { fromItm, toItm } from './itm.js';
 import { readTerrain, SRC, terrainFilesExist, type TerrainData } from './raster.js';
 import { cutWindow, type Window } from './window.js';
+import { readPlaces, searchPlaces, type Place } from './places.js';
 
 export interface Weighting {
   /** % of the category found at the point itself (0 km in the cumulative table). */
@@ -65,6 +66,19 @@ export class TerrainService {
       this.cache = [];
     }
     return this.data;
+  }
+
+  private places?: Place[];
+  private placesAt = 0;
+  hasPlaces(): boolean {
+    return fs.existsSync(path.join(this.dir, 'places.json'));
+  }
+  /** Named places for the console's search box; empty until a build has written places.json. */
+  searchPlaces(q: string, near: { lat: number; lon: number }, limit = 8): Place[] {
+    const file = path.join(this.dir, 'places.json');
+    const mtime = fs.existsSync(file) ? fs.statSync(file).mtimeMs : 0;
+    if (mtime !== this.placesAt) { this.places = readPlaces(this.dir); this.placesAt = mtime; }
+    return this.places ? searchPlaces(this.places, q, near, limit) : [];
   }
 
   status(): TerrainStatus {

@@ -18,6 +18,7 @@ import { fromArrayBuffer, fromUrl } from 'geotiff';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readPbf } from './pbf.js';
+import { PlaceCollector, placeKind, writePlaces } from './places.js';
 import { CLASS, FLAG } from './classes.js';
 import { fromItm, toItm } from './itm.js';
 import { DEM_NODATA, SRC, writeTerrain, type GridSpec, type TerrainMeta } from './raster.js';
@@ -178,7 +179,7 @@ export async function overpassFetch(urls: string[], query: string, label: string
   return undefined;
 }
 
-interface OsmElement { type: 'way' | 'relation'; id: number; tags?: Record<string, string>; geometry?: { lat: number; lon: number }[]; members?: { type: string; role: string; geometry?: { lat: number; lon: number }[] }[] }
+interface OsmElement { type: 'node' | 'way' | 'relation'; id: number; tags?: Record<string, string>; lat?: number; lon?: number; geometry?: { lat: number; lon: number }[]; members?: { type: string; role: string; geometry?: { lat: number; lon: number }[] }[] }
 
 const URBAN_LANDUSE = new Set(['residential', 'commercial', 'retail', 'industrial', 'construction', 'railway', 'garages', 'education', 'institutional', 'religious', 'military', 'port', 'depot', 'brownfield', 'landfill', 'farmyard']);
 const GRASS_LANDUSE = new Set(['farmland', 'meadow', 'grass', 'recreation_ground', 'village_green', 'cemetery', 'allotments', 'orchard', 'plant_nursery', 'greenfield', 'flowerbed']);
@@ -234,6 +235,17 @@ export function overpassQuery(s: number, w: number, n: number, e: number): strin
   way["leisure"~"^(park|golf_course|garden|pitch|recreation_ground|common)$"]${bb};
   way["waterway"~"^(river|canal|stream|ditch|drain|riverbank)$"]${bb};
   way["man_made"~"^(pier|breakwater|groyne)$"]${bb};
+  node["name"]["place"]${bb};
+  node["name"]["natural"]${bb};
+  node["name"]["tourism"]${bb};
+  node["name"]["historic"]${bb};
+  node["name"]["leisure"]${bb};
+  node["name"]["man_made"~"^(lighthouse|pier|tower|water_tower|mast)$"]${bb};
+  node["name"]["amenity"~"^(parking|pub|bar|cafe|restaurant|school|place_of_worship|hospital|clinic|fuel|community_centre|library|police|fire_station|shelter)$"]${bb};
+  node["name"]["railway"~"^(station|halt)$"]${bb};
+  way["name"]["amenity"~"^(parking|school|place_of_worship|hospital)$"]${bb};
+  way["name"]["tourism"]${bb};
+  way["name"]["historic"]${bb};
   relation["type"="multipolygon"]["natural"~"^(water|wood|scrub|heath|grassland|wetland|beach|sand|bare_rock|scree)$"]${bb};
   relation["type"="multipolygon"]["landuse"]${bb};
   relation["type"="multipolygon"]["leisure"~"^(park|golf_course|garden|common)$"]${bb};
@@ -417,12 +429,19 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
   // In 'auto' a few minutes of failures is enough: the extract is the better bet by then.
   const budget = cfg.osmSource === 'auto' ? { leftMs: cfg.overpassBudgetS * 1000 } : undefined;
   let lines = 0, areas = 0;
+  const places = new PlaceCollector();
+  const seenNodes = new Set<number>();
   const handle = (els: OsmElement[]) => {
     for (const el of els) {
       const tags = el.tags ?? {};
-      if (el.type === 'way') {
+      if (el.type === 'node') {
+        if (seenNodes.has(el.id) || el.lat === undefined || el.lon === undefined) continue;
+        seenNodes.add(el.id);
+        places.add(tags, el.lat, el.lon);
+      } else if (el.type === 'way') {
         if (seenWays.has(el.id) || !el.geometry || el.geometry.length < 2) continue;
         seenWays.add(el.id);
+        places.addLine(tags, el.geometry);
         const pts = el.geometry.map(grid);
         const fl = lineFlag(tags);
         if (fl) {
@@ -435,6 +454,8 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
       } else if (el.type === 'relation') {
         if (seenRels.has(el.id)) continue;
         seenRels.add(el.id);
+        const outer = (el.members ?? []).find((m) => m.role === 'outer' && m.geometry?.length);
+        if (outer) places.addLine(tags, outer.geometry!);
         const ac = areaClass(tags);
         if (ac === undefined) continue;
         const rings = (el.members ?? []).filter((m) => m.type === 'way' && m.geometry && m.geometry.length >= 2).map((m) => m.geometry!.map(grid));
@@ -482,8 +503,10 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
     }
     const res = readPbf(file, {
       bbox: cfg.bbox,
-      wantWay: (t) => lineFlag(t) !== 0 || areaClass(t) !== undefined,
-      wantRelation: (t) => areaClass(t) !== undefined,
+      wantWay: (t) => lineFlag(t) !== 0 || areaClass(t) !== undefined || placeKind(t) !== undefined,
+      wantRelation: (t) => areaClass(t) !== undefined || placeKind(t) !== undefined,
+      wantNode: (t) => placeKind(t) !== undefined && !t.highway,
+      onNode: (nd) => handle([{ type: 'node', id: nd.id, tags: nd.tags, lat: nd.lat, lon: nd.lon }]),
       onWay: (w) => handle([{ type: 'way', id: w.id, tags: w.tags, geometry: w.geometry }]),
       onRelation: (rel) => handle([{ type: 'relation', id: rel.id, tags: rel.tags, members: rel.members }]),
       onProgress: (pass, f) => report('osm', 45 + (pass - 1) * 18 + f * 18, `Reading the OpenStreetMap extract (pass ${pass} of 2, ${Math.round(f * 100)} %)`),
@@ -548,6 +571,8 @@ export async function buildTerrain(dir: string, cfg: TerrainConfig, opts: BuildO
   };
   report('write', 96, 'Writing rasters');
   writeTerrain(dir, { meta, dem, cls, flags, src });
+  writePlaces(dir, places.places);
+  log(`places: ${places.places.length} named places, roads and paths for search`);
   log(`done: land ${lid ? `${meta.coverage.lidarPct}% LiDAR, ` : ''}${meta.coverage.copernicusPct}% Copernicus, ${meta.coverage.nonePct}% no height; sea ${meta.coverage.seaPct}% of grid`);
   report('done', 100, 'Terrain data built');
   return meta;

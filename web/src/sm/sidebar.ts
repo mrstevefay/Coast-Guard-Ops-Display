@@ -3,7 +3,7 @@ import { PLANNING_POINT_KINDS, POINT_KIND_LABEL, POINT_KIND_SHORT, type Incident
 import { del, get, patch, post, put } from '../api';
 import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
-import { closeModal, modal } from './modal';
+import { closeModal, confirmBox, modal } from './modal';
 import { cs } from './state';
 
 export interface SidebarActions {
@@ -35,7 +35,10 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   // The subject tab holds a form: never wipe it on a position tick, only when the data key changes.
   if (cs.s.tab === 'subject' && search?.incident) {
     const key = `${search.incident.id}:${search.incident.subjectUpdatedAt ?? ''}`;
-    if (root.dataset.subjectKey === key && root.querySelector('#subject-form')) {
+    const form = root.querySelector('#subject-form');
+    // keep the form when nothing changed, while someone types in it, or when the change is our own autosave
+    if (form && (root.dataset.subjectKey === key || form.contains(document.activeElement) || Date.now() - subjectSavedAt < 5000)) {
+      root.dataset.subjectKey = key;
       root.querySelector('.tabs-sm')!.innerHTML = tabs;
       wireTabs(root);
       return;
@@ -50,7 +53,7 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
   // The behaviour tab has its own terrain selector: keep it across position ticks too.
   if (cs.s.tab === 'behaviour' && search?.incident) {
     const sa = cs.s.searchArea;
-    const key = `${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}:${significantPoints().map((p) => p.id).join(',')}:${sa?.key ?? ''}:${sa?.loading ? 'l' : sa?.area ? 'a' : sa?.error ? 'e' : ''}`;
+    const key = `${search.targets.map((t) => `${t.id}${t.status}`).join(',')}:${search.teams.map((t) => `${t.id}${t.status}`).join(',')}:${cs.s.subjectKey ?? ''}:${cs.s.subject?.category ?? ''}:${cs.s.subject?.terrain ?? ''}:${search.incident.ipp ? 1 : 0}:${significantPoints().map((p) => p.id).join(',')}:${sa?.key ?? ''}:${sa?.loading ? 'l' : sa?.area ? 'a' : sa?.error ? 'e' : ''}`;
     if (root.dataset.behaviourKey === key && root.querySelector('#behaviour-body')) {
       root.querySelector('.tabs-sm')!.innerHTML = tabs;
       wireTabs(root);
@@ -87,16 +90,14 @@ function pointsBar(): string {
   const addable = PLANNING_POINT_KINDS.filter((k) => !((k === 'lkp' || k === 'pls') && has(k)));
   const rows = pts
     .map((p) => `<div class="pt-row k-${p.kind}"><span class="pt-kind" title="${esc(POINT_KIND_LABEL[p.kind])}">${esc(POINT_KIND_SHORT[p.kind])}</span>
-      <span class="grow"><b>${esc(p.label ?? POINT_KIND_LABEL[p.kind])}</b> <span class="muted small">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)} · ${fmtTime(p.setAt)}</span>${p.note ? `<span class="muted small pt-note">${esc(p.note)}</span>` : ''}</span>
-      <button class="mini" data-pt-locate="${p.id}" title="Locate">◎</button><button class="mini ${pick?.pointId === p.id ? 'on' : ''}" data-pt-move="${p.id}" title="Move">Move</button><button class="mini danger" data-pt-del="${p.id}" title="Remove">×</button></div>`)
+      <span class="grow"><b>${esc(p.label ?? POINT_KIND_LABEL[p.kind])}</b> <span class="muted small">${fmtTime(p.setAt)}</span>${p.note ? `<span class="muted small pt-note">${esc(p.note)}</span>` : ''}</span>
+      <button class="mini" data-pt-locate="${p.id}" title="Show on the map">◎</button><button class="mini ${pick?.pointId === p.id ? 'on' : ''}" data-pt-move="${p.id}" title="Move">Move</button><button class="mini danger" data-pt-del="${p.id}" title="Remove">×</button></div>`)
     .join('');
+  const chip = (k: PlanningPointKind) => `<button class="pt-add k-${k} ${pick?.kind === k && !pick.pointId ? 'on' : ''}" data-pt-add="${k}">+ ${esc(k === 'lkp' ? 'Last known position' : k === 'pls' ? 'Last seen' : POINT_KIND_LABEL[k])}</button>`;
   return `<div class="points-bar">
-      <div class="pt-head"><b>Points</b><span class="right"></span>
-        ${has('lkp') ? '' : `<button class="btn-sm ${pick?.kind === 'lkp' && !pick.pointId ? 'on' : ''}" data-pt-add="lkp">${pick?.kind === 'lkp' && !pick.pointId ? 'Click the map…' : 'Set LKP'}</button>`}
-        <select id="pt-add" title="Add a point"><option value="">+ Add point…</option>${addable.map((k) => `<option value="${k}">${esc(POINT_KIND_LABEL[k])}</option>`).join('')}</select>
-      </div>
-      ${rows || '<p class="muted small pad0">Start with the last known position. Then add the place last seen, home, vehicle and any place significant to them: they shape the plan and the search areas.</p>'}
-      ${pick ? `<p class="small amber pad0">Click the map to ${pick.pointId ? 'move' : 'place'}: ${esc(POINT_KIND_LABEL[pick.kind])} (Esc to cancel)</p>` : ''}
+      <div class="pt-head"><b>Points</b></div>
+      ${rows || '<p class="muted small pad0">Start with the last known position: click a button, then the map, or search above the map.</p>'}
+      <div class="pt-adds">${addable.map(chip).join('')}</div>
     </div>`;
 }
 
@@ -150,9 +151,9 @@ function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]):
             <b>${esc(m.callsign)}</b> ${esc(m.name.split(' ')[0])}${fix ? ` <small class="${Date.now() / 1000 - fix.tst > 120 ? 'amber' : 'muted'}">${fmtAgeShort(fix.tst)}</small>` : ' <small class="amber">—</small>'}
             <button class="x" data-remove="${t.id}:${m.userId}" title="Remove">×</button></span>`;
         }).join('') || '<span class="muted small">No members: select responders and assign.</span>'}</div>
+        ${teamTargetLine(t, tts, targets)}
         <div class="team-foot">
           <span>Sweep width <span class="width">${t.searchWidthM} m</span></span>
-          <span class="muted small">${tts.length} target${tts.length === 1 ? '' : 's'}: ${tts.map((x) => esc(x.name)).join(', ') || '—'}</span>
         </div>
       </div>`;
     })
@@ -162,6 +163,21 @@ function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]):
     <button class="btn-sm primary wide" data-action="new-team">+ New team</button>
     <p class="muted small pad">New teams start at ${daylight ? '20 m (daylight)' : '10 m (after sunset)'} sweep width; change it per team with ⚙.</p>
     ${unassigned.length ? `<p class="muted small pad">Not in a team: ${unassigned.map((r) => esc(r.name)).join(', ')}</p>` : ''}`;
+}
+
+/**
+ * The team's current target and the one next step for it: assign a target, start the search,
+ * mark it searched. Team status follows on the server.
+ */
+function teamTargetLine(t: Team, mine: Target[], all: Target[]): string {
+  const live = mine.filter((x) => x.status !== 'done');
+  const cur = live.find((x) => x.status === 'in-progress') ?? live[0];
+  const free = all.filter((x) => !x.teamId && x.status !== 'cancelled' && x.status !== 'done');
+  const done = mine.filter((x) => x.status === 'done').length;
+  const assign = free.length && t.members.length ? `<select class="next-step" data-assign-target="${t.id}"><option value="">${cur ? 'Add target…' : 'Assign target…'}</option>${free.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>` : '';
+  if (!cur) return `<div class="team-target"><span class="muted small grow">${done ? `${done} searched · ` : ''}${t.members.length ? (free.length ? 'No target' : 'No target: draw one or use a segment on the Plan tab') : 'Add members first'}</span>${assign}</div>`;
+  const step = cur.status === 'in-progress' ? `<button class="btn-sm primary" data-target-step="${cur.id}:done">Mark searched</button>` : `<button class="btn-sm primary" data-target-step="${cur.id}:in-progress">Start search</button>`;
+  return `<div class="team-target"><span class="grow"><b data-zoom-target="${cur.id}">${esc(cur.name)}</b> ${badge(cur.status)}${live.length > 1 ? ` <span class="muted small">+${live.length - 1} more</span>` : ''}${done ? ` <span class="muted small">${done} searched</span>` : ''}</span>${step}</div>${assign && live.length < 2 ? `<div class="team-target">${assign}</div>` : ''}`;
 }
 
 function targetsTab(targets: Target[], teams: Team[], drawMode: string): string {
@@ -216,6 +232,13 @@ function teamSettingsModal(t: Team): void {
 }
 
 // ---------------------------------------------------------------- subject (who we are looking for)
+/** The categories most searches start from, offered as chips; the rest are under More. */
+const COMMON_CATEGORIES = ['despondent', 'dementia', 'psychological-illness', 'children-aged-1-16', 'walker-solo', 'water-related'];
+const CATEGORY_SHORT: Record<string, string> = { 'psychological-illness': 'Mental illness', 'children-aged-1-16': 'Child', 'walker-solo': 'Walker', 'water-related': 'Water' };
+
+/** When the form last saved itself; a snapshot echo of our own save must not redraw the form under the typist. */
+export let subjectSavedAt = 0;
+
 async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
   let subject: IncidentSubject | null = null;
   try {
@@ -227,71 +250,91 @@ async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
   const s = subject ?? ({ incidentId, despondent: false, mentalHealth: false, selfHarmHistory: false, suicideThreatened: false, depression: false, significantPlaceKnown: false, hasPhoto: false } as IncidentSubject);
   const v = (k: keyof IncidentSubject) => esc((s[k] as string | number | undefined) ?? '');
   const photoUrl = s.hasPhoto ? `/api/incidents/${incidentId}/subject/photo?t=${encodeURIComponent(s.photoUpdatedAt ?? '')}` : '';
+  const name = (slug: string) => CATEGORY_SHORT[slug] ?? profileBySlug(slug)?.name ?? slug;
+  const radio = (field: string, value: string, label: string, on: boolean) => `<label class="opt"><input type="radio" name="${field}" value="${esc(value)}" ${on ? 'checked' : ''} /><span>${esc(label)}</span></label>`;
+  const check = (field: string, label: string, on: boolean, id = '') => `<label class="opt"><input type="checkbox" name="${field}" ${id ? `id="${id}"` : ''} ${on ? 'checked' : ''} /><span>${esc(label)}</span></label>`;
+  const isCommon = COMMON_CATEGORIES.includes(s.category ?? '');
   el.innerHTML = `<form class="subject-form" id="subject-form">
-      <p class="muted small" style="margin:0">Crew see this on their phones, never on the TV.</p>
+      <div class="k">Who</div>
+      <div class="opts">${['Male', 'Female', 'Other'].map((x) => radio('sex', x, x, s.sex === x)).join('')}<label class="age">Age <input name="age" type="number" min="0" max="120" value="${v('age')}" /></label></div>
+      <div class="opts">${check('despondent', 'Low mood', s.despondent)}${check('mentalHealth', 'Mental health concerns', s.mentalHealth)}${check('selfHarmHistory', 'Previous self-harm', s.selfHarmHistory, 'sh')}</div>
+      <div class="k">Behaviour category</div>
+      <div class="opts" id="cat-opts">${COMMON_CATEGORIES.map((slug) => radio('category', slug, name(slug), s.category === slug)).join('')}
+        <select name="categoryMore" id="cat-more" class="${s.category && !isCommon ? 'on' : ''}"><option value="">More…</option>${LPB_GROUPS.map((g) => `<optgroup label="${esc(g.label)}">${g.slugs.map((slug) => { const p = profileBySlug(slug)!; return `<option value="${slug}" ${s.category === slug && !isCommon ? 'selected' : ''}>${esc(p.name)} (n=${p.n})</option>`; }).join('')}</optgroup>`).join('')}</select></div>
+      <p class="small lpb-hint" id="lpb-hint"></p>
+      <label id="sh-means" style="${s.selfHarmHistory ? '' : 'display:none'}">Previous means <input name="selfHarmMeans" value="${v('selfHarmMeans')}" maxlength="200" placeholder="e.g. overdose, water" /></label>
+      <div class="opts" id="desp-flags" style="${s.despondent || s.category === 'despondent' ? '' : 'display:none'}">${check('suicideThreatened', 'Threat made', s.suicideThreatened)}${check('depression', 'Depression', s.depression)}${check('significantPlaceKnown', 'Significant place known', s.significantPlaceKnown)}</div>
+      <label>Terrain for the statistics <select name="terrain"><option value="">All / unknown</option>${LPB_TERRAINS.map((t) => `<option ${s.terrain === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+
+      <div class="k">For crew <span class="muted small">(on their phones, never the TV)</span></div>
+      <label>Name <input name="name" value="${v('name')}" maxlength="120" /></label>
+      <label>Clothing and appearance <textarea name="clothing" rows="2" placeholder="Height, build, hair, what they were wearing">${v('clothing')}</textarea></label>
       <div class="subject-photo">
         ${photoUrl ? `<img src="${photoUrl}" alt="Subject photo" />` : '<div class="ph">No photo</div>'}
-        <div>
-          <label>Recent photo <input type="file" id="subject-file" accept="image/*" /></label>
-          ${s.hasPhoto ? '<button type="button" class="btn-sm danger" id="photo-del">Remove photo</button>' : ''}
-        </div>
+        <div><label>Recent photo <input type="file" id="subject-file" accept="image/*" /></label>
+          ${s.hasPhoto ? '<button type="button" class="btn-sm danger" id="photo-del">Remove photo</button>' : ''}</div>
       </div>
-      <label>Name <input name="name" value="${v('name')}" maxlength="120" /></label>
-      <div class="row2">
-        <label>Sex <select name="sex"><option value="">—</option>${['Male', 'Female', 'Other'].map((x) => `<option ${s.sex === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-        <label>Age <input name="age" type="number" min="0" max="120" value="${v('age')}" /></label>
-        <span></span>
-      </div>
-      <label>Clothing / appearance <textarea name="clothing" rows="2" placeholder="Height, build, hair, what they were wearing">${v('clothing')}</textarea></label>
-      <label>Other description <textarea name="description" rows="2" placeholder="Mobility, phone, vehicle, dog…">${v('description')}</textarea></label>
-      <label>Significant locations <textarea name="locations" rows="2" placeholder="Home, where last seen, car parked, favourite spots">${v('locations')}</textarea></label>
-      <label>Relevant history <textarea name="history" rows="2" placeholder="Previous incidents, medical conditions, routines">${v('history')}</textarea></label>
-      <div class="flags">
-        <label><input type="checkbox" name="despondent" ${s.despondent ? 'checked' : ''} /> Despondent</label>
-        <label><input type="checkbox" name="mentalHealth" ${s.mentalHealth ? 'checked' : ''} /> Mental health concerns</label>
-        <label><input type="checkbox" name="selfHarmHistory" id="sh" ${s.selfHarmHistory ? 'checked' : ''} /> Previous self-harm attempt(s)</label>
-        <label id="sh-means" style="${s.selfHarmHistory ? '' : 'display:none'}">Previous means <input name="selfHarmMeans" value="${v('selfHarmMeans')}" maxlength="200" placeholder="e.g. overdose, water" /></label>
-        <div id="desp-flags" class="desp-flags" style="${s.despondent || s.category === 'despondent' ? '' : 'display:none'}">
-          <p class="muted small">Despondent factors (change the fatality odds for men, UK study 2011):</p>
-          <label><input type="checkbox" name="suicideThreatened" ${s.suicideThreatened ? 'checked' : ''} /> Suicide threatened (explicit threat)</label>
-          <label><input type="checkbox" name="depression" ${s.depression ? 'checked' : ''} /> Depression diagnosed or suspected</label>
-          <label><input type="checkbox" name="significantPlaceKnown" ${s.significantPlaceKnown ? 'checked' : ''} /> A significant place is known (beauty spot, memories, regular walk: name it under locations)</label>
-        </div>
-      </div>
-      <div class="row2 lpb-pick">
-        <label>Behaviour category <select name="category" id="subject-category"><option value="">—</option>${LPB_GROUPS.map((g) => `<optgroup label="${esc(g.label)}">${g.slugs.map((slug) => { const p = profileBySlug(slug)!; return `<option value="${slug}" ${s.category === slug ? 'selected' : ''}>${esc(p.name)} (n=${p.n})</option>`; }).join('')}</optgroup>`).join('')}</select></label>
-        <label>Terrain <select name="terrain"><option value="">All / unknown</option>${LPB_TERRAINS.map((t) => `<option ${s.terrain === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
-      </div>
-      <p class="muted small lpb-hint" id="lpb-hint">${lpbHint(s)}</p>
-      <div class="save-row"><button type="submit" class="btn-sm primary">Save details</button><span class="dirty" id="subject-dirty"></span>${s.updatedAt ? `<span class="muted small right">saved ${fmtTime(s.updatedAt)}</span>` : ''}</div>
+      <details class="subject-more" ${s.description || s.locations || s.history ? 'open' : ''}><summary>More: description, places, history</summary>
+        <label>Other description <textarea name="description" rows="2" placeholder="Mobility, phone, vehicle, dog…">${v('description')}</textarea></label>
+        <label>Places that matter <textarea name="locations" rows="2" placeholder="Mark them on the map too: they shape the plan">${v('locations')}</textarea></label>
+        <label>Relevant history <textarea name="history" rows="2" placeholder="Previous incidents, medical conditions, routines">${v('history')}</textarea></label>
+      </details>
+      <div class="save-row"><span class="muted small" id="subject-saved">${s.updatedAt ? `Saved ${fmtTime(s.updatedAt)}` : 'Saves as you go'}</span></div>
     </form>`;
   const form = el.querySelector<HTMLFormElement>('#subject-form')!;
-  const dirty = el.querySelector<HTMLElement>('#subject-dirty')!;
-  form.addEventListener('input', () => {
-    dirty.textContent = 'unsaved changes';
+  const saved = el.querySelector<HTMLElement>('#subject-saved')!;
+  const more = el.querySelector<HTMLSelectElement>('#cat-more')!;
+  const category = () => String(new FormData(form).get('category') ?? '') || more.value;
+  const refreshHint = () => {
     const f = new FormData(form);
-    el.querySelector('#lpb-hint')!.innerHTML = lpbHint({ category: String(f.get('category') ?? ''), age: f.get('age') ? Number(f.get('age')) : undefined, despondent: f.get('despondent') === 'on', mentalHealth: f.get('mentalHealth') === 'on' });
-    el.querySelector<HTMLElement>('#desp-flags')!.style.display = f.get('despondent') === 'on' || f.get('category') === 'despondent' ? '' : 'none';
-  });
-  el.querySelector<HTMLInputElement>('#sh')!.addEventListener('change', (ev) => (el.querySelector<HTMLElement>('#sh-means')!.style.display = (ev.target as HTMLInputElement).checked ? '' : 'none'));
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
+    const cur = category();
+    const hint = el.querySelector<HTMLElement>('#lpb-hint')!;
+    const sug = !cur ? suggestProfile({ age: f.get('age') ? Number(f.get('age')) : undefined, despondent: f.get('despondent') === 'on', mentalHealth: f.get('mentalHealth') === 'on' }) : undefined;
+    hint.innerHTML = cur ? `<span class="muted">${esc(profileBySlug(cur)?.definition ?? '')}</span>` : sug ? `Suggested: <button type="button" class="mini on" id="use-sug" data-slug="${esc(sug)}">Use ${esc(profileBySlug(sug)?.name ?? sug)}</button>` : '<span class="muted">Pick a category to get the plan and the distance rings.</span>';
+    hint.querySelector<HTMLButtonElement>('#use-sug')?.addEventListener('click', (ev) => setCategory((ev.currentTarget as HTMLElement).dataset.slug!));
+    el.querySelector<HTMLElement>('#desp-flags')!.style.display = f.get('despondent') === 'on' || cur === 'despondent' ? '' : 'none';
+    el.querySelector<HTMLElement>('#sh-means')!.style.display = f.get('selfHarmHistory') === 'on' ? '' : 'none';
+    more.classList.toggle('on', Boolean(more.value));
+  };
+  const setCategory = (slug: string) => {
+    const r = form.querySelector<HTMLInputElement>(`input[name=category][value="${slug}"]`);
+    form.querySelectorAll<HTMLInputElement>('input[name=category]').forEach((x) => (x.checked = false));
+    if (r) { r.checked = true; more.value = ''; } else more.value = slug;
+    refreshHint();
+    schedule(0);
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = async () => {
     const f = new FormData(form);
     const body = {
       name: String(f.get('name') ?? ''), sex: String(f.get('sex') ?? ''), age: f.get('age') ? Number(f.get('age')) : null,
       clothing: String(f.get('clothing') ?? ''), description: String(f.get('description') ?? ''), locations: String(f.get('locations') ?? ''), history: String(f.get('history') ?? ''),
       despondent: f.get('despondent') === 'on', mentalHealth: f.get('mentalHealth') === 'on', selfHarmHistory: f.get('selfHarmHistory') === 'on', selfHarmMeans: String(f.get('selfHarmMeans') ?? ''),
-      category: String(f.get('category') ?? ''), terrain: String(f.get('terrain') ?? ''),
+      category: category(), terrain: String(f.get('terrain') ?? ''),
       suicideThreatened: f.get('suicideThreatened') === 'on', depression: f.get('depression') === 'on', significantPlaceKnown: f.get('significantPlaceKnown') === 'on',
     };
     try {
+      subjectSavedAt = Date.now();
       await put(`/api/incidents/${incidentId}/subject`, body);
-      dirty.textContent = '';
-      toast('Subject details saved; crew phones updated');
+      subjectSavedAt = Date.now();
+      saved.textContent = `Saved ${fmtTime(new Date().toISOString())}`;
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'failed', true);
+      saved.innerHTML = `<span class="amber">Not saved: ${esc(e instanceof Error ? e.message : 'failed')}</span>`;
     }
+  };
+  const schedule = (ms: number) => { clearTimeout(timer); saved.textContent = 'Saving…'; timer = setTimeout(() => void save(), ms); };
+  form.addEventListener('submit', (ev) => { ev.preventDefault(); schedule(0); });
+  form.addEventListener('change', (ev) => {
+    const t = ev.target as HTMLElement;
+    if (t.id === 'subject-file') return;
+    if (t === more && more.value) form.querySelectorAll<HTMLInputElement>('input[name=category]').forEach((x) => (x.checked = false));
+    if ((t as HTMLInputElement).name === 'category') more.value = '';
+    refreshHint();
+    schedule(300);
   });
+  // typing saves a moment after the last key
+  form.addEventListener('input', (ev) => { const t = ev.target as HTMLElement; if (t.matches('textarea, input[type=text], input:not([type]), input[type=number]')) schedule(1200); });
+  refreshHint();
   el.querySelector<HTMLInputElement>('#subject-file')!.addEventListener('change', async (ev) => {
     const file = (ev.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -300,22 +343,19 @@ async function subjectTab(el: HTMLElement, incidentId: string): Promise<void> {
       const res = await fetch(`/api/incidents/${incidentId}/subject/photo`, { method: 'PUT', body: blob, headers: { 'content-type': blob.type }, credentials: 'same-origin' });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})) as { error?: string }).error ?? `HTTP ${res.status}`);
       toast('Photo uploaded');
+      subjectSavedAt = 0; // let the form redraw with the new photo
+      (document.activeElement as HTMLElement | null)?.blur();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'upload failed', true);
     }
   });
   el.querySelector('#photo-del')?.addEventListener('click', async () => {
-    if (!confirm('Remove the photo?')) return;
+    if (!(await confirmBox('Remove the photo?', 'Remove'))) return;
     await del(`/api/incidents/${incidentId}/subject/photo`);
+    subjectSavedAt = 0;
+    (document.activeElement as HTMLElement | null)?.blur();
     toast('Photo removed');
   });
-}
-
-/** Hint under the category picker: what is chosen, or what the flags and age suggest. */
-function lpbHint(s: { category?: string; age?: number; despondent?: boolean; mentalHealth?: boolean }): string {
-  if (profileBySlug(s.category)) return 'The plan and distance rings are on the Plan tab.';
-  const sug = profileBySlug(suggestProfile(s));
-  return sug ? `Suggested from the details above: <b>${esc(sug.name)}</b>.` : 'Pick a category to get the plan and distance rings.';
 }
 
 // ---------------------------------------------------------------- behaviour: the plan card
@@ -382,7 +422,10 @@ const ground = (d: string) => GROUND_NAME[d] ?? d;
 function segmentsTable(a: SearchAreaResult): string {
   const segs = a.segments ?? [];
   if (!segs.length) return '';
-  const row = (s: SearchSegment) => `<tr><td><b>${esc(s.id)}</b></td><td class="small">${esc(ground(s.dominant))} · ${areaText(s.areaKm2)}</td><td class="num"><b class="amber">${s.poaPct} %</b></td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show on the map">◎</button><button class="mini" data-seg-target="${esc(s.id)}" title="Make this an area target">Target</button></td></tr>`;
+  const teams = cs.s.search?.teams ?? [];
+  // a segment already made into a target (its name starts with the segment id)
+  const taken = new Set((cs.s.search?.targets ?? []).filter((t) => t.status !== 'cancelled').map((t) => /^(S\d+)\b/.exec(t.name)?.[1]).filter(Boolean) as string[]);
+  const row = (s: SearchSegment) => `<tr><td><b>${esc(s.id)}</b></td><td class="small">${esc(ground(s.dominant))} · ${areaText(s.areaKm2)}</td><td class="num"><b class="amber">${s.poaPct} %</b></td><td class="nowrap"><button class="mini" data-seg-locate="${esc(s.id)}" title="Show on the map">◎</button>${taken.has(s.id) ? '<span class="muted small seg-added">Added</span>' : `<select class="seg-assign" data-seg-target="${esc(s.id)}" title="Make this an area target, for a team or for later"><option value="">Assign…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}${t.status === 'forming' ? '' : ` · ${esc(t.status)}`}</option>`).join('')}<option value="none">Target, no team yet</option></select>`}</td></tr>`;
   const top = segs.slice(0, 5), rest = segs.slice(5);
   return `<h4>Search segments <span class="src terrain" title="Probability of area: % of subjects in this category expected in each segment">POA</span></h4>
     <table class="lpb-table seg-table"><tbody>${top.map(row).join('')}</tbody></table>
@@ -494,10 +537,12 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
     if (!ring.length) return;
     a.locate(ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length, 16);
   }));
-  el.querySelectorAll<HTMLButtonElement>('[data-seg-target]').forEach((b) => b.addEventListener('click', async () => {
-    const seg = segById(b.dataset.segTarget!);
+  el.querySelectorAll<HTMLSelectElement>('[data-seg-target]').forEach((sel) => sel.addEventListener('change', async () => {
+    const seg = segById(sel.dataset.segTarget!);
     const incId = cs.s.search?.incident?.id;
-    if (!seg || !incId || seg.targetRing.length < 4) return;
+    if (!sel.value || !seg || !incId || seg.targetRing.length < 4) return;
+    const teamId = sel.value === 'none' ? null : Number(sel.value);
+    sel.disabled = true;
     try {
       // Name and notes are read by crew: plain ground, size and how to search it. The probability stays on the console.
       await post(`/api/incidents/${incId}/targets`, {
@@ -505,12 +550,13 @@ function renderPlan(el: HTMLElement, s: IncidentSubject, hasIpp: boolean, attrib
         kind: 'area',
         geometry: { type: 'Polygon', coordinates: [seg.targetRing] },
         priority: seg.rank <= 3 ? 1 : seg.rank <= 6 ? 2 : 3,
+        teamId,
         notes: `Mostly ${ground(seg.dominant).toLowerCase()}, ${areaText(seg.areaKm2)}.${seg.rank === 1 && (area?.atPointPct ?? 0) > 0 ? ' Holds the last known position: search it closely, including cover.' : ''}`,
       });
-      toast(`${seg.id} added as a target`);
-      b.disabled = true;
-      b.textContent = 'Added';
+      const team = (cs.s.search?.teams ?? []).find((t) => t.id === teamId);
+      toast(team ? `${seg.id} assigned to ${team.name}` : `${seg.id} added as a target`);
     } catch (e) {
+      sel.disabled = false;
       toast(e instanceof Error ? e.message : 'failed', true);
     }
   }));
@@ -542,12 +588,11 @@ function wire(root: HTMLElement, a: SidebarActions): void {
   root.querySelectorAll<HTMLButtonElement>('[data-locate]').forEach((b) => b.addEventListener('click', (ev) => { ev.preventDefault(); const [lon, lat] = b.dataset.locate!.split(',').map(Number); a.locate(lon, lat, 16); }));
   const pointById = (id: number) => search?.incident?.points?.find((p) => p.id === id);
   root.querySelectorAll<HTMLButtonElement>('[data-pt-add]').forEach((b) => b.addEventListener('click', () => a.pickPoint(b.dataset.ptAdd as PlanningPointKind)));
-  root.querySelector<HTMLSelectElement>('#pt-add')?.addEventListener('change', (ev) => { const v = (ev.target as HTMLSelectElement).value as PlanningPointKind; if (v) a.pickPoint(v); });
   root.querySelectorAll<HTMLButtonElement>('[data-pt-locate]').forEach((b) => b.addEventListener('click', () => { const p = pointById(Number(b.dataset.ptLocate)); if (p) a.locate(p.lon, p.lat, 16); }));
   root.querySelectorAll<HTMLButtonElement>('[data-pt-move]').forEach((b) => b.addEventListener('click', () => { const p = pointById(Number(b.dataset.ptMove)); if (p) a.pickPoint(p.kind, p.id); }));
   root.querySelectorAll<HTMLButtonElement>('[data-pt-del]').forEach((b) => b.addEventListener('click', async () => {
     const p = pointById(Number(b.dataset.ptDel));
-    if (p && confirm(`Remove ${POINT_KIND_LABEL[p.kind]}${p.label ? ` "${p.label}"` : ''}?`)) await del(`/api/points/${p.id}`);
+    if (p && (await confirmBox(`Remove ${POINT_KIND_LABEL[p.kind]}${p.label ? ` "${p.label}"` : ''}?`, 'Remove'))) await del(`/api/points/${p.id}`);
   }));
   root.querySelector<HTMLSelectElement>('#assign-team')?.addEventListener('change', async (ev) => {
     const sel = ev.target as HTMLSelectElement;
@@ -569,7 +614,7 @@ function wire(root: HTMLElement, a: SidebarActions): void {
   root.querySelectorAll<HTMLSelectElement>('[data-team-status]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/teams/${s.dataset.teamStatus}`, { status: s.value }); }));
   root.querySelectorAll<HTMLButtonElement>('[data-team-settings]').forEach((b) => b.addEventListener('click', () => { const t = search!.teams.find((x) => x.id === Number(b.dataset.teamSettings)); if (t) teamSettingsModal(t); }));
   root.querySelectorAll<HTMLButtonElement>('[data-fit-team]').forEach((b) => b.addEventListener('click', () => { const t = search!.teams.find((x) => x.id === Number(b.dataset.fitTeam)); if (t) a.fitTeam(t); }));
-  root.querySelectorAll<HTMLButtonElement>('[data-del-team]').forEach((b) => b.addEventListener('click', async () => { if (confirm('Delete this team? Members are released, targets unassigned.')) await del(`/api/teams/${b.dataset.delTeam}`); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-del-team]').forEach((b) => b.addEventListener('click', async () => { if (await confirmBox('Delete this team? Members are released, targets unassigned.', 'Delete team')) await del(`/api/teams/${b.dataset.delTeam}`); }));
   root.querySelectorAll<HTMLButtonElement>('[data-leader]').forEach((b) => b.addEventListener('click', async () => { const [teamId, userId] = b.dataset.leader!.split(':').map(Number); await patch(`/api/teams/${teamId}`, { leaderUserId: userId }); }));
   root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
     const [teamId, userId] = b.dataset.remove!.split(':').map(Number);
@@ -587,8 +632,10 @@ function wire(root: HTMLElement, a: SidebarActions): void {
     const lon = pts.reduce((s, c) => s + c[0], 0) / pts.length, lat = pts.reduce((s, c) => s + c[1], 0) / pts.length;
     a.locate(lon, lat, t.geometry.type === 'Point' ? 16 : 15);
   }));
+  root.querySelectorAll<HTMLButtonElement>('[data-target-step]').forEach((b) => b.addEventListener('click', async () => { const [id, status] = b.dataset.targetStep!.split(':'); b.disabled = true; await patch(`/api/targets/${id}`, { status }); }));
+  root.querySelectorAll<HTMLSelectElement>('[data-assign-target]').forEach((sel) => sel.addEventListener('change', async () => { if (sel.value) await patch(`/api/targets/${sel.value}`, { teamId: Number(sel.dataset.assignTarget) }); }));
   root.querySelectorAll<HTMLSelectElement>('[data-target-status]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/targets/${s.dataset.targetStatus}`, { status: s.value }); }));
   root.querySelectorAll<HTMLSelectElement>('[data-target-team]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/targets/${s.dataset.targetTeam}`, { teamId: s.value ? Number(s.value) : null }); }));
-  root.querySelectorAll<HTMLButtonElement>('[data-del-target]').forEach((b) => b.addEventListener('click', async () => { if (confirm('Delete this target?')) await del(`/api/targets/${b.dataset.delTarget}`); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-del-target]').forEach((b) => b.addEventListener('click', async () => { if (await confirmBox('Delete this target?', 'Delete')) await del(`/api/targets/${b.dataset.delTarget}`); }));
   root.querySelectorAll<HTMLButtonElement>('[data-edit-target]').forEach((b) => b.addEventListener('click', () => { const t = search!.targets.find((x) => x.id === Number(b.dataset.editTarget)); if (t) a.editTarget(t); }));
 }

@@ -309,6 +309,23 @@ licence; the data is used here with attribution for operational planning, and pe
 from The Centre for Search Research (tcsr.org.uk) should be confirmed before wider
 distribution.
 
+## Placing points and positions
+
+The console's map has one box, **Search a place or paste a position**. The New tasking dialog has the same box. It reads:
+
+| Input | Example |
+| --- | --- |
+| Decimal degrees, any order or hemisphere letters | `53.3905, -6.068`, `53.3905N 6.068W` |
+| Degrees and decimal minutes, as given at sea | `53 23.43N 006 04.08W` |
+| Degrees, minutes, seconds | `53°23'25.8"N 6°04'04.8"W` |
+| ITM (EPSG:2157) | `ITM 728900 739100`, or any pair with a northing over 500 000 |
+| Irish Grid, from OSi maps | `O 287 385`, `O2870038500`, or a numeric pair under 500 000 |
+| A place name | `Baily Lighthouse`, `Summit car park`, `Thormanby Road` |
+
+Place names come from the OpenStreetMap data the terrain build already reads. The build writes about 23,000 named places, roads and paths to `data/terrain/places.json`, so search needs no internet at callout time. A terrain built before this version has no place index: rebuild it once in Settings → Terrain. Irish Grid references convert to WGS84 within 3 m of PROJ. Eircodes are not supported, because looking one up needs a licensed service.
+
+Choosing a result, or clicking the map after a **+ point** button, opens a small label box on the map with the kind, a label and a note. Enter saves. A position given when a tasking opens becomes its last known position.
+
 ## Terrain-shaped search areas
 
 The rings are straight-line statistics. On the console map each one is also drawn as the

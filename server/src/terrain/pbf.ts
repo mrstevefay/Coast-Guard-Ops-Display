@@ -22,6 +22,9 @@ export interface PbfOptions {
   wantRelation: (tags: Record<string, string>) => boolean;
   onWay: (w: PbfWay) => void;
   onRelation: (r: PbfRelation) => void;
+  /** Optional: tagged nodes inside the box (place names, peaks, car parks). */
+  wantNode?: (tags: Record<string, string>) => boolean;
+  onNode?: (n: { id: number; tags: Record<string, string>; lat: number; lon: number }) => void;
   onProgress?: (pass: 1 | 2, fraction: number) => void;
 }
 
@@ -232,28 +235,43 @@ export function readPbf(file: string, opts: PbfOptions): { nodes: number; ways: 
       if (f === 2) {
         // dense nodes
         const r = new Reader(b.buf, s, e);
-        let ids: number[] = [], lats: number[] = [], lons: number[] = [];
+        let ids: number[] = [], lats: number[] = [], lons: number[] = [], kv: number[] = [];
+        const wantTags = Boolean(opts.onNode && opts.wantNode);
         while (!r.done) {
           const [df, dw] = r.key();
           if (df === 1) ids = r.packed(true, r.bytes());
           else if (df === 8) lats = r.packed(true, r.bytes());
           else if (df === 9) lons = r.packed(true, r.bytes());
+          else if (df === 10 && wantTags) kv = r.packed(false, r.bytes());
           else r.skip(dw);
         }
-        let id = 0, la = 0, lo = 0;
+        let id = 0, la = 0, lo = 0, k = 0;
         for (let i = 0; i < ids.length; i++) {
           id += ids[i]; la += lats[i]; lo += lons[i];
           const lat = toLat(la), lon = toLon(lo);
-          if (inBox(lat, lon)) nodes.add(id, lat, lon);
+          // keys_vals: key, value, key, value, …, 0 for each node in turn
+          let tags: Record<string, string> | undefined;
+          if (kv.length) {
+            while (k < kv.length && kv[k] !== 0) { (tags ??= {})[b.strings[kv[k]]] = b.strings[kv[k + 1]]; k += 2; }
+            k++;
+          }
+          if (inBox(lat, lon)) {
+            nodes.add(id, lat, lon);
+            if (tags && opts.wantNode!(tags)) opts.onNode!({ id, tags, lat, lon });
+          }
         }
       } else if (f === 1) {
         const r = new Reader(b.buf, s, e);
-        let id = 0, lat = 0, lon = 0;
+        let id = 0, lat = 0, lon = 0, keys: number[] = [], vals: number[] = [];
         while (!r.done) {
           const [nf, nw] = r.key();
-          if (nf === 1) id = r.svarint(); else if (nf === 8) lat = toLat(r.svarint()); else if (nf === 9) lon = toLon(r.svarint()); else r.skip(nw);
+          if (nf === 1) id = r.svarint(); else if (nf === 8) lat = toLat(r.svarint()); else if (nf === 9) lon = toLon(r.svarint());
+          else if (nf === 2) keys = r.packed(false, r.bytes()); else if (nf === 3) vals = r.packed(false, r.bytes()); else r.skip(nw);
         }
-        if (inBox(lat, lon)) nodes.add(id, lat, lon);
+        if (inBox(lat, lon)) {
+          nodes.add(id, lat, lon);
+          if (keys.length && opts.onNode && opts.wantNode) { const tags = tagsOf(b, keys, vals); if (opts.wantNode(tags)) opts.onNode({ id, tags, lat, lon }); }
+        }
       } else if (f === 3) {
         if (!finished) { nodes.finish(); finished = true; }
         const r = new Reader(b.buf, s, e);
