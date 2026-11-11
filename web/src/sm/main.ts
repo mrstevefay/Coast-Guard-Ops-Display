@@ -402,6 +402,14 @@ function announceFinds(): void {
   }
 }
 
+/** Shown on every console screen while callout alerts are switched off: nobody should assume crew were alerted. */
+function alertsOffBadge(): string {
+  const a = cs.s.state?.alerts;
+  if (!a || a.enabled) return '';
+  const until = a.until ? ` until ${new Date(a.until).toLocaleString('en-IE', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Dublin' })}` : '';
+  return `<a class="alerts-off" href="#settings/alerts" title="Crew phones are not being alerted. Admins switch this under Settings → Callout alerts.">ALERTS OFF${esc(until)}</a>`;
+}
+
 function renderTop(): void {
   const s = cs.s.state;
   const searchInc = cs.s.search?.incident;
@@ -413,7 +421,7 @@ function renderTop(): void {
   if (inc) {
     const tasking = searchInc?.kind === 'tasking' && !callout;
     const startedAt = tasking ? searchInc!.startedAt : inc.receivedAt;
-    el.innerHTML = `<span class="mode-tag ${tasking ? 'mode-tasking' : 'mode-callout'}">${tasking ? 'TASKING' : 'CALLOUT'}</span><span class="elapsed ${tasking ? 'tasking' : ''}">${fmtElapsed(Date.now() - Date.parse(startedAt))}</span><span class="inc-txt" title="${esc(inc.text)}">${esc(inc.text)}</span><span class="muted">${fmtTime(startedAt)}</span>`;
+    el.innerHTML = `<span class="mode-tag ${tasking ? 'mode-tasking' : 'mode-callout'}">${tasking ? 'TASKING' : 'CALLOUT'}</span><span class="elapsed ${tasking ? 'tasking' : ''}">${fmtElapsed(Date.now() - Date.parse(startedAt))}</span><span class="inc-txt" title="${esc(inc.text)}">${esc(inc.text)}</span><span class="muted">${fmtTime(startedAt)}</span>${alertsOffBadge()}`;
     const modeKey = `${tasking ? 'tasking' : 'callout'}:${inc.id}`;
     if (actions.dataset.mode !== modeKey) {
       actions.dataset.mode = modeKey;
@@ -433,7 +441,7 @@ function renderTop(): void {
     if (cn) { cn.textContent = n ? String(n) : ''; cn.hidden = !n; }
     document.getElementById('contacts-btn')?.classList.toggle('on', contactsOpen());
   } else {
-    el.innerHTML = `<span class="mode-tag mode-standby">STANDBY</span><span class="muted">No open tasking</span>`;
+    el.innerHTML = `<span class="mode-tag mode-standby">STANDBY</span><span class="muted">No open tasking</span>${alertsOffBadge()}`;
     if (actions.dataset.mode !== 'standby') {
       actions.dataset.mode = 'standby';
       actions.innerHTML = `<button class="btn-sm primary" id="new-incident">New tasking</button><a class="btn-sm" href="/m/" target="_blank">Crew app</a>`;

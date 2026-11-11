@@ -348,4 +348,8 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
   `,
+  // 13 — station-wide switches set from the console, such as "callout alerts off until…".
+  `
+  CREATE TABLE app_flags (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+  `,
 ];

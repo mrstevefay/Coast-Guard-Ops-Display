@@ -1,4 +1,6 @@
+import { esc, fmtTime } from '../../format';
 import { pushAlerts } from '../push';
+import { store } from '../store';
 import { btn, toast, wireActions } from '../ui';
 
 const WHAT = 'A notification when a callout is raised or stood down, and when your team is given a target. It backs up your pager; it does not replace it.';
@@ -18,13 +20,17 @@ export function alertsOffer(): string {
 /** More page: where alerts stand on this phone, with on, off and a test. */
 export function alertsCard(): string {
   const s = pushAlerts.state;
+  const st = store.s.state?.alerts;
+  const off = st && !st.enabled
+    ? `<p class="note warn">The station has switched callout alerts off${st.until ? ` until ${esc(fmtTime(st.until))}` : ''}. Nothing is sent to any phone meanwhile; rely on your pager.</p>`
+    : '';
   const body =
     s === 'on' ? `<p><span class="badge-s green">on</span> This phone gets callout alerts.</p><div class="btn-row">${btn('Send a test alert', 'alerts-test', 'primary')}${btn('Turn off', 'alerts-off', 'ghost')}</div>`
     : s === 'off' ? `<p>${WHAT}</p><div class="btn-row"><button class="btn primary" data-action="alerts-on" ${pushAlerts.busy ? 'disabled' : ''}>Turn on alerts</button></div>`
     : s === 'needs-install' ? `<p>${INSTALL} Then come back here and turn alerts on.</p>`
     : s === 'blocked' ? '<p class="note warn">Alerts are blocked for this app. Allow notifications for it in the phone’s settings, then reopen the app.</p>'
     : '<p class="note muted">This browser cannot show alerts. Use Chrome on Android, or the app on your Home Screen on iPhone.</p>';
-  return `<section class="card" id="alerts"><h2>Callout alerts</h2>${body}</section>`;
+  return `<section class="card" id="alerts"><h2>Callout alerts</h2>${off}${body}</section>`;
 }
 
 export function wireAlerts(root: HTMLElement): void {
@@ -39,7 +45,7 @@ export function wireAlerts(root: HTMLElement): void {
     },
     'alerts-test': async () => {
       const r = await pushAlerts.test();
-      toast(r.sent ? 'Test alert sent: it should arrive in a few seconds' : 'The test could not be sent. Turn alerts off and on again.', !r.sent);
+      toast(r.sent ? 'Test alert sent: it should arrive in a few seconds' : r.off ? 'The station has alerts switched off: nothing was sent.' : 'The test could not be sent. Turn alerts off and on again.', !r.sent);
     },
     'alerts-dismiss': () => pushAlerts.dismiss(),
   });

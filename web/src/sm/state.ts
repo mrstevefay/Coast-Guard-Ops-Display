@@ -36,7 +36,7 @@ export interface ConsoleState {
   /** 'ops' = map + sidebar; 'settings' = administration pages (#settings/<section>); 'history' = past incidents (#history/<id>). */
   view: 'ops' | 'settings' | 'history';
   historyId?: string;
-  section: 'users' | 'contacts' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
+  section: 'users' | 'contacts' | 'alerts' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
 }
 
 type Listener = () => void;

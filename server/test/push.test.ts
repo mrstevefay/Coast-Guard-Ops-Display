@@ -109,4 +109,47 @@ describe('push alerts', () => {
     await settle();
     expect(t.pushed.map((p) => [p.endpoint, p.payload.title, p.payload.url])).toEqual([[sub('ada-phone').endpoint, 'Account waiting for approval', '/sm/#settings/users']]);
   });
+
+  it('admins switch alerts off and on; nothing is sent while off; every screen sees it', async () => {
+    await call(member, 'POST', '/api/push/subscriptions', { subscription: sub('joe-phone-2') });
+    expect((await call(await t.login('manager'), 'PUT', '/api/admin/alerts', { enabled: false })).statusCode).toBe(403); // earlier deactivation signed the old session out
+    expect((await call(admin, 'PUT', '/api/admin/alerts', {})).statusCode).toBe(400);
+    const off = await call(admin, 'PUT', '/api/admin/alerts', { enabled: false, reason: 'Exercise weekend' });
+    expect(off.statusCode).toBe(200);
+    expect(json(off).alerts).toMatchObject({ enabled: false, reason: 'Exercise weekend', changedBy: 'Ada Admin' });
+    expect(json(off).alerts.until).toBeUndefined();
+    expect(t.store.get().alerts).toEqual({ enabled: false });
+    // a callout while off: no alert, and the test button says why
+    t.pushed.length = 0;
+    t.callout.callout({ text: 'Callout while alerts are off' });
+    await settle();
+    t.callout.standdown('manual');
+    await settle();
+    expect(t.pushed).toEqual([]);
+    expect(json(await call(member, 'POST', '/api/push/test'))).toMatchObject({ sent: 0, off: true });
+    // phones keep their subscription, so switching back on needs nothing from the crew
+    expect(t.push.counts().get(t.seed.member.id)).toBe(1);
+    const on = await call(admin, 'PUT', '/api/admin/alerts', { enabled: true });
+    expect(json(on).alerts).toMatchObject({ enabled: true, members: 2, phones: 2 });
+    expect(t.store.get().alerts).toEqual({ enabled: true });
+    expect(json(await call(member, 'POST', '/api/push/test')).sent).toBe(1);
+    const actions = t.db.all<{ action: string }>("SELECT action FROM audit_log WHERE action LIKE 'alerts.%' ORDER BY id").map((r) => r.action);
+    expect(actions).toEqual(['alerts.disabled', 'alerts.enabled']);
+  });
+
+  it('switched off for a while, alerts come back on by themselves', async () => {
+    const r = json(await call(admin, 'PUT', '/api/admin/alerts', { enabled: false, hours: 2 })).alerts;
+    expect(r.enabled).toBe(false);
+    expect(Date.parse(r.until) - Date.now()).toBeGreaterThan(2 * 3600_000 - 60_000);
+    expect(t.store.get().alerts?.until).toBe(r.until);
+    expect((await call(admin, 'PUT', '/api/admin/alerts', { enabled: false, hours: 0 })).statusCode).toBe(400);
+    expect((await call(admin, 'PUT', '/api/admin/alerts', { enabled: false, hours: 1000 })).statusCode).toBe(400);
+    // move the end of the off period into the past: the next look finds alerts on again
+    const row = t.db.get<{ value: string }>("SELECT value FROM app_flags WHERE key = 'alerts.off'")!;
+    t.db.run("UPDATE app_flags SET value = ? WHERE key = 'alerts.off'", JSON.stringify({ ...JSON.parse(row.value), until: new Date(Date.now() - 1000).toISOString() }));
+    expect(t.push.enabled()).toBe(true);
+    t.push.announce();
+    expect(t.store.get().alerts).toEqual({ enabled: true });
+    expect(json(await call(member, 'POST', '/api/push/test')).sent).toBe(1);
+  });
 });

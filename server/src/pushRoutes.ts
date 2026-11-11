@@ -14,6 +14,22 @@ export async function pushRoutes(app: FastifyInstance, d: AuthCtx & { audit: Aud
 
   app.get('/api/push/key', { preHandler: member }, async () => ({ key: push.publicKey() }));
 
+  // ---- the station-wide switch (admins) ----
+  const admin = requireAuth(d, 'admin');
+  app.get('/api/admin/alerts', { preHandler: admin }, async () => ({ alerts: push.adminStatus() }));
+  app.put<{ Body: { enabled?: boolean; hours?: number | null; reason?: string } }>('/api/admin/alerts', { preHandler: admin }, async (req, reply) => {
+    const p = req.principal!;
+    if (typeof req.body?.enabled !== 'boolean') return bad(reply, 'enabled (true or false) is required');
+    try {
+      const by = p.kind === 'user' ? { id: p.userId, name: p.name } : undefined;
+      const s = push.setEnabled(req.body.enabled, { hours: req.body.hours ?? undefined, reason: req.body.reason, by });
+      audit.log(p, req.ip, req.body.enabled ? 'alerts.enabled' : 'alerts.disabled', { type: 'alerts', id: 'station' }, req.body.enabled ? undefined : { until: s.until ?? 'until switched on', reason: req.body.reason?.trim() || undefined });
+      return { alerts: push.adminStatus() };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
   app.post<{ Body: { subscription?: PushSubscriptionInput } }>('/api/push/subscriptions', { preHandler: member }, async (req, reply) => {
     const p = req.principal!;
     if (p.kind !== 'user') return bad(reply, 'forbidden', 403);

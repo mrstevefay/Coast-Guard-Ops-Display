@@ -3,14 +3,14 @@
  * Everything the crew app offers under More → Admin, plus the admin-only API
  * (backups, retention, audit log) that had no UI, laid out for a laptop.
  */
-import { CONTACT_ROLES, CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type DevicePublic, type InvitePublic, type ProviderHealth, type Role, type StationContact, type TerrainStatus, type UserPublic } from '../../../shared/types';
+import { CONTACT_ROLES, CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type AlertsAdminStatus, type DevicePublic, type InvitePublic, type ProviderHealth, type Role, type StationContact, type TerrainStatus, type UserPublic } from '../../../shared/types';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { esc } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, modal } from './modal';
 import { cs } from './state';
 
-export type SettingsSection = 'users' | 'contacts' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
+export type SettingsSection = 'users' | 'contacts' | 'alerts' | 'displays' | 'feeds' | 'backups' | 'terrain' | 'audit' | 'system' | 'account';
 
 interface FeedSetting { key: string; label: string; help: string; provider: string; env?: string; secret: boolean; kind: 'text' | 'url'; source: 'ui' | 'env' | 'config' | 'none'; value: string; isSet: boolean }
 
@@ -23,6 +23,7 @@ interface Health { status: string; mode: string; uptimeSec: number; db: string; 
 const SECTIONS: { id: SettingsSection; label: string; adminOnly: boolean }[] = [
   { id: 'users', label: 'Users', adminOnly: false },
   { id: 'contacts', label: 'Station contacts', adminOnly: false },
+  { id: 'alerts', label: 'Callout alerts', adminOnly: true },
   { id: 'displays', label: 'Display keys', adminOnly: true },
   { id: 'feeds', label: 'Data feeds', adminOnly: true },
   { id: 'backups', label: 'Backups & retention', adminOnly: true },
@@ -65,7 +66,7 @@ export function renderSettings(root: HTMLElement, force = false): void {
     <div class="set-body" id="set-body"><div id="set-reveal">${reveals.get(section) ?? ''}</div><div id="set-main"><p class="muted">Loading…</p></div></div>`;
   root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => (location.hash = `#settings/${b.dataset.section}`)));
   const main = root.querySelector<HTMLElement>('#set-main')!;
-  const render = { users: usersSection, contacts: contactsSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, terrain: terrainSection, audit: auditSection, system: systemSection, account: accountSection }[section];
+  const render = { users: usersSection, contacts: contactsSection, alerts: alertsSection, displays: displaysSection, feeds: feedsSection, backups: backupsSection, terrain: terrainSection, audit: auditSection, system: systemSection, account: accountSection }[section];
   if (!allowed.some((s) => s.id === section)) main.innerHTML = '<p class="muted">Admins only.</p>';
   else render(main).catch((e) => (main.innerHTML = `<p class="note error">${esc(msg(e))}</p>`));
 }
@@ -220,6 +221,44 @@ function userModal(u: UserPublic | undefined, reload: () => Promise<void>): void
       closeModal();
     }, reload);
   });
+}
+
+// ------------------------------------------------------------------ callout alerts
+/** The station-wide switch for alerts to crew phones: off for a while (an exercise, a fault) or until switched back on. */
+async function alertsSection(el: HTMLElement): Promise<void> {
+  const load = async () => {
+    const { alerts: a } = await get<{ alerts: AlertsAdminStatus }>('/api/admin/alerts');
+    const reach = `${a.members} member${a.members === 1 ? '' : 's'} on ${a.phones} phone${a.phones === 1 ? '' : 's'}`;
+    el.innerHTML = `<div class="set-head"><h2>Callout alerts</h2></div>
+      <div class="set-card alerts-state ${a.enabled ? 'on' : 'off'}">
+        ${a.enabled
+          ? `<p class="big">${badge('on', 'green')} Crew phones are alerted on a callout, a stand-down and a new target.</p><p class="muted">Alerts are on for ${reach}. Members turn them on per phone in the crew app.</p>`
+          : `<p class="big">${badge('off', 'red')} Crew phones are <b>not</b> being alerted.</p>
+             <p>Switched off ${a.changedBy ? `by <b>${esc(a.changedBy)}</b> ` : ''}${a.changedAt ? `on ${fmtDT(a.changedAt)}` : ''}${a.until ? `, back on by itself at <b>${fmtDT(a.until)}</b>` : ', <b>until someone switches it back on</b>'}.${a.reason ? ` Reason: ${esc(a.reason)}.` : ''}</p>
+             <p class="muted">${reach} keep their alerts set up and get them again as soon as this is switched on.</p>`}
+      </div>
+      ${a.enabled
+        ? `<form class="set-card set-form" id="alerts-off-form"><h3>Switch alerts off</h3>
+            <p class="muted small">For an exercise, a training weekend, or while a fault is fixed. Callouts still open on the console and the TV; only the phone alerts stop. The pager is not affected.</p>
+            <label>For <select name="hours"><option value="2">2 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="168">7 days</option><option value="">until I switch them back on</option></select></label>
+            <label>Reason (optional) <input name="reason" maxlength="200" placeholder="e.g. Exercise weekend" /></label>
+            <div class="modal-actions left"><button type="submit" class="btn-sm danger">Switch alerts off</button></div>
+          </form>`
+        : `<div class="set-card"><button class="btn-sm primary" data-act="alerts-on">Switch alerts back on</button></div>`}
+      <p class="muted small">Every change is in the audit log. While alerts are off, the console shows <b>ALERTS OFF</b> in the top bar and the crew app says so.</p>`;
+    wire(el, { 'alerts-on': () => run(async () => { await put('/api/admin/alerts', { enabled: true }); toast('Alerts are on'); }, load) });
+    el.querySelector<HTMLFormElement>('#alerts-off-form')?.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = new FormData(ev.target as HTMLFormElement);
+      const hours = f.get('hours') ? Number(f.get('hours')) : null;
+      confirmModal('Switch callout alerts off?', `Crew phones will not be alerted to callouts${hours ? ` for ${hours >= 24 ? `${hours / 24} day${hours === 24 ? '' : 's'}` : `${hours} hours`}` : ' until someone switches them back on'}. Make sure the pager is working.`, 'Switch off', async () => {
+        await put('/api/admin/alerts', { enabled: false, hours, reason: String(f.get('reason') ?? '') });
+        toast('Alerts are off');
+        await load();
+      }, true);
+    });
+  };
+  await load();
 }
 
 // ------------------------------------------------------------------ display keys

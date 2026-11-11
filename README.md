@@ -127,7 +127,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 
 **Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
 `GET /api/incidents` (history), `GET /api/incidents/:id/replay`, `GET /api/incidents/:id/report[.html]` (manager);
-`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…`, `POST /api/users/:id/approve|reject`, `GET|POST|DELETE /api/invites` (admin); `GET|POST /api/join/:token` (public, rate-limited); `GET /api/push/key`, `POST /api/push/subscriptions|unsubscribe|test` (member); `GET|POST|DELETE /api/admin/display-keys`,
+`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…`, `POST /api/users/:id/approve|reject`, `GET|POST|DELETE /api/invites` (admin); `GET|POST /api/join/:token` (public, rate-limited); `GET /api/push/key`, `POST /api/push/subscriptions|unsubscribe|test` (member); `GET|PUT /api/admin/alerts` (admin: the station-wide switch); `GET|POST|DELETE /api/admin/display-keys`,
 `GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
 `GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
@@ -356,6 +356,14 @@ Crew can get a notification on their phone, opt-in per phone: the Status page of
 | **Account waiting for approval** (group invite) | Admins |
 
 A tasking opened without a callout is quiet. Settings → Users shows who has alerts on.
+
+**Switching alerts off.** Admins can stop all phone alerts under **Settings → Callout alerts**, for 2 hours, 12 hours, 24 hours, 7 days, or until switched back on, with an optional reason (an exercise weekend, a fault being fixed). A timed switch-off ends by itself, so it cannot be forgotten. While alerts are off:
+
+- nothing is sent to any phone, the test alert included;
+- the console top bar shows a red **ALERTS OFF** badge on every screen, linking to the switch;
+- the crew app's Callout alerts card says so, and the Status page stops offering alerts.
+
+Phones keep their alerts set up, so switching back on needs nothing from the crew. Callouts still open on the console and the TV; the pager is not part of this app and is not affected. Every change is in the audit log (`alerts.disabled`, `alerts.enabled`). Migration 13.
 
 - **iPhone and iPad:** alerts only work once the app is on the Home Screen (Share → Add to Home Screen), iOS 16.4 or later. Android works in Chrome, installed or not.
 - **HTTPS is required**, with `PUBLIC_URL` set to the site's `https://` address.

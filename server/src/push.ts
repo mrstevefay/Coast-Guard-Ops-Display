@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import type { AlertsAdminStatus, AlertsStatus } from '../../shared/types.js';
 import { now, type Db } from './db/index.js';
 
 /**
@@ -35,8 +36,14 @@ const realSender: PushSender = (sub, payload, o) => webpush.sendNotification(sub
  */
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /^updates\.push\.services\.mozilla\.com$/, /(^|\.)notify\.windows\.com$/, /(^|\.)push\.services\.mozilla\.com$/];
 
+interface OffRecord { until?: string; reason?: string; at: string; by?: number; byName?: string }
+const OFF_KEY = 'alerts.off';
+
 export class Push {
   private keys?: { publicKey: string; privateKey: string };
+  private reopen?: NodeJS.Timeout;
+  /** Told whenever the switch changes (including coming back on by itself), so screens can show it. */
+  onChange?: (s: AlertsStatus) => void;
 
   constructor(
     private readonly db: Db,
@@ -64,6 +71,72 @@ export class Push {
 
   publicKey(): string {
     return this.vapid().publicKey;
+  }
+
+  // ------------------------------------------------------------ the station-wide switch
+  private offRecord(): OffRecord | undefined {
+    const row = this.db.get<{ value: string }>('SELECT value FROM app_flags WHERE key = ?', OFF_KEY);
+    if (!row) return undefined;
+    try {
+      const r = JSON.parse(row.value) as OffRecord;
+      if (r.until && Date.parse(r.until) <= Date.now()) {
+        // the time is up: alerts are on again
+        this.db.run('DELETE FROM app_flags WHERE key = ?', OFF_KEY);
+        this.log.info({}, 'alerts back on: switch-off period ended');
+        return undefined;
+      }
+      return r;
+    } catch {
+      return undefined;
+    }
+  }
+
+  enabled(): boolean {
+    return !this.offRecord();
+  }
+
+  status(): AlertsStatus {
+    const off = this.offRecord();
+    return off ? { enabled: false, ...(off.until ? { until: off.until } : {}) } : { enabled: true };
+  }
+
+  adminStatus(): AlertsAdminStatus {
+    const off = this.offRecord();
+    const counts = this.counts();
+    return {
+      ...this.status(),
+      ...(off ? { reason: off.reason, changedAt: off.at, changedBy: off.byName } : {}),
+      members: counts.size,
+      phones: [...counts.values()].reduce((a, b) => a + b, 0),
+    };
+  }
+
+  /**
+   * Switch callout alerts off for every phone, for `hours` or until switched back on (no hours),
+   * or back on. Phones stay subscribed, so switching back on needs nothing from the crew.
+   */
+  setEnabled(on: boolean, opts: { hours?: number; reason?: string; by?: { id: number; name: string } } = {}): AlertsStatus {
+    if (on) this.db.run('DELETE FROM app_flags WHERE key = ?', OFF_KEY);
+    else {
+      const hours = opts.hours === undefined || opts.hours === null ? undefined : Number(opts.hours);
+      if (hours !== undefined && !(hours > 0 && hours <= 24 * 30)) throw new Error('hours must be between 0 and 720');
+      const rec: OffRecord = { at: now(), ...(hours ? { until: new Date(Date.now() + hours * 3600_000).toISOString() } : {}), ...(opts.reason?.trim() ? { reason: opts.reason.trim().slice(0, 200) } : {}), ...(opts.by ? { by: opts.by.id, byName: opts.by.name } : {}) };
+      this.db.run('INSERT OR REPLACE INTO app_flags (key, value, updated_at) VALUES (?, ?, ?)', OFF_KEY, JSON.stringify(rec), rec.at);
+    }
+    this.announce();
+    return this.status();
+  }
+
+  /** Tell the screens, and wake up to switch back on when an off period ends. */
+  announce(): void {
+    if (this.reopen) clearTimeout(this.reopen);
+    this.reopen = undefined;
+    const s = this.status();
+    if (s.until) {
+      this.reopen = setTimeout(() => this.announce(), Math.min(Math.max(0, Date.parse(s.until) - Date.now()) + 1000, 2 ** 31 - 1));
+      this.reopen.unref?.();
+    }
+    this.onChange?.(s);
   }
 
   /** Remember this phone's subscription for this member (a phone belongs to whoever signed in last). */
@@ -108,10 +181,14 @@ export class Push {
    * that cannot be reached must not hold up a callout. Subscriptions the push service says are gone
    * (404, 410) are dropped; others are dropped after ten failures in a row.
    */
-  async notify(to: number[] | 'all', msg: PushMessage): Promise<{ sent: number; failed: number; removed: number }> {
+  async notify(to: number[] | 'all', msg: PushMessage): Promise<{ sent: number; failed: number; removed: number; off?: boolean }> {
     const out = { sent: 0, failed: 0, removed: 0 };
     let rows: SubRow[];
     try {
+      if (!this.enabled()) {
+        this.log.info({ tag: msg.tag }, 'push not sent: alerts are switched off');
+        return { ...out, off: true };
+      }
       const active = 'JOIN users u ON u.id = s.user_id AND u.active = 1';
       if (to === 'all') rows = this.db.all<SubRow>(`SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth FROM push_subscriptions s ${active}`);
       else if (!to.length) return out;

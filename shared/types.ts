@@ -733,6 +733,24 @@ export interface DashboardState extends DashboardData {
   version: string;
   /** Pi mirror: 'live' = showing the hosted server's state, 'fallback' = local data. */
   upstream?: 'live' | 'fallback';
+  /** Callout alerts to crew phones: off when an admin has switched them off (until a time, or until switched back on). */
+  alerts?: AlertsStatus;
+}
+
+export interface AlertsStatus {
+  enabled: boolean;
+  /** When switched off for a while: when alerts come back on by themselves. */
+  until?: string;
+}
+
+/** What admins see about the alerts switch. */
+export interface AlertsAdminStatus extends AlertsStatus {
+  reason?: string;
+  changedAt?: string;
+  changedBy?: string;
+  /** Members with alerts on for at least one phone, and the phones. */
+  members: number;
+  phones: number;
 }
 
 // ------------------------------------------------------------ websocket

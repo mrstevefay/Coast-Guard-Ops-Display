@@ -44,7 +44,7 @@ export async function renderMore(root: HTMLElement): Promise<void> {
   });
   // the alerts card follows the phone's state (on, off, blocked) without redrawing the whole page
   wireAlerts(root);
-  const key = () => `${pushAlerts.state}:${pushAlerts.busy}`;
+  const key = () => `${pushAlerts.state}:${pushAlerts.busy}:${store.s.state?.alerts?.enabled}:${store.s.state?.alerts?.until ?? ''}`;
   let shown = key();
   const stop = store.subscribe(() => {
     const el = root.querySelector('#alerts');

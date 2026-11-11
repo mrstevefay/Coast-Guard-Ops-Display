@@ -37,8 +37,14 @@ class PushAlerts {
   state: PushState = capable() ? 'off' : ios && !standalone() ? 'needs-install' : 'unsupported';
   busy = false;
 
-  /** Should the Status page offer to turn alerts on? Once per phone until answered. */
+  /** Has the station switched alerts off for everyone? */
+  get stationOff(): boolean {
+    return store.s.state?.alerts?.enabled === false;
+  }
+
+  /** Should the Status page offer to turn alerts on? Once per phone until answered; not while the station has them off. */
   get shouldOffer(): boolean {
+    if (this.stationOff) return false;
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch { /* private mode */ }
     return !dismissed && (this.state === 'off' || this.state === 'needs-install');
@@ -120,7 +126,7 @@ class PushAlerts {
     this.set('off');
   }
 
-  test(): Promise<{ sent: number; failed: number }> {
+  test(): Promise<{ sent: number; failed: number; off?: boolean }> {
     return post('/api/push/test');
   }
 }

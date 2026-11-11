@@ -203,6 +203,8 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     const push = deps.push;
     await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit, invites: new Invites(deps.db, deps.users), push }));
     if (push) {
+      push.onChange = (s) => store.setAlerts(s);
+      push.announce(); // put the switch on every screen now, and re-arm an off period after a restart
       await app.register(async (sub) => pushRoutes(sub, { ...auth, audit: deps.audit, push }));
       attachPushTriggers(push, store, deps.search, cfg.station.shortName);
     }

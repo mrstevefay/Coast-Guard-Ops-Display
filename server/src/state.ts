@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { DashboardData, DashboardState, ModeState, ProviderHealth } from '../../shared/types.js';
+import type { AlertsStatus, DashboardData, DashboardState, ModeState, ProviderHealth } from '../../shared/types.js';
 import type { AppConfig } from './config.js';
 import { derive } from './derive.js';
 
@@ -13,6 +13,7 @@ export class StateStore extends EventEmitter {
   private data: DashboardData = {};
   private health: Record<string, ProviderHealth> = {};
   private mode: ModeState = { mode: 'standby', changedAt: new Date().toISOString() };
+  private alerts?: AlertsStatus;
   /** Latest state received from the hosted server (Pi mirror); undefined = serve local. */
   private upstream?: DashboardState;
   private upstreamAt = 0;
@@ -51,6 +52,13 @@ export class StateStore extends EventEmitter {
     this.emit('mode', m, prev);
   }
 
+  /** The callout alerts switch, so every screen can show when alerts are off. */
+  setAlerts(a: AlertsStatus): void {
+    if (this.alerts?.enabled === a.enabled && this.alerts?.until === a.until) return;
+    this.alerts = a;
+    this.emit('change');
+  }
+
   getMode(): ModeState {
     return this.mode;
   }
@@ -85,6 +93,7 @@ export class StateStore extends EventEmitter {
       panels: c.panels,
       map: c.map,
       version: VERSION,
+      ...(this.alerts ? { alerts: this.alerts } : {}),
     };
   }
 }

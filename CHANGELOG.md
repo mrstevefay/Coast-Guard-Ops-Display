@@ -7,6 +7,9 @@
   - **iPhone:** needs the app on the Home Screen; the app says so instead of failing.
   - **Safety:** payloads are encrypted for the phone; subscriptions are accepted only for Apple, Google, Mozilla and Windows push services; dead phones are dropped. The server's key pair is made on first use and kept in the database.
   - Settings → Users shows who has alerts on. Routes: `GET /api/push/key`, `POST /api/push/subscriptions|unsubscribe|test`. Migration 12. New dependency: `web-push` 3.6.7.
+  - **Station-wide switch:** admins can turn alerts off under Settings → Callout alerts, for 2 h, 12 h, 24 h, 7 days or until switched back on, with a reason. A timed switch-off ends by itself.
+    - While off, nothing is sent to any phone, the console shows a red **ALERTS OFF** badge in the top bar, and the crew app says so. Phones stay set up for when it is switched back on.
+    - Audited. Route: `GET|PUT /api/admin/alerts`. Migration 13.
 - **Organising teams is quicker.** On the console's Teams tab:
   - **Drag and drop:** drag people onto a team, onto + New team, between teams, or back to Waiting. Dragging one of several ticked people moves them all.
   - **Tap instead:** tick people and tap **+ Add here** on a team, or tap a member for Make leader, Move to, Show on the map and Remove.
