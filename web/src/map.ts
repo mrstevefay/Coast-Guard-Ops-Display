@@ -1,6 +1,7 @@
 import maplibregl, { type GeoJSONSource, type ImageSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { POINT_KIND_SHORT, type DashboardState, type Fix, type PlanningPointRow, type SearchAreaResult, type SearchSnapshot } from '../../shared/types';
+import { declutter, groupOverlapping, type Dot, type LabelIn } from '../../shared/declutter';
 import { addSearchLayers, emptyFC, setSearchData, tracksFC, type SEARCH_LAYER_IDS } from './search/layers';
 
 /** Great-circle ring polygon around a point, radius in km. */
@@ -129,6 +130,7 @@ export class OpsMap {
     });
     this.map.addControl(new maplibregl.AttributionControl({ compact: Boolean(this.opts.interactive) }), 'bottom-right');
     if (this.opts.interactive) this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    for (const ev of ['zoom', 'rotate', 'pitch', 'resize'] as const) this.map.on(ev, () => this.scheduleDeclutter());
     this.map.on('load', () => {
       if (this.opts.search) addSearchLayers(this.map!, 'station-halo');
       this.ready = true;
@@ -169,28 +171,30 @@ export class OpsMap {
     // HTML labels (no glyph server needed on the kiosk)
     for (const mk of this.markers) mk.remove();
     this.markers = [];
-    const label = (lon: number, lat: number, text: string, cls: string, offsetY: number) => {
+    const label = (lon: number, lat: number, text: string, cls: string, offsetY: number, prio: number, dotR = 0, keep = false) => {
       const el = document.createElement('div');
       el.className = `map-label ${cls}`;
       el.textContent = text;
+      tagLabel(el, prio, 'top', [0, offsetY], dotR, keep);
       this.markers.push(new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, offsetY] }).setLngLat([lon, lat]).addTo(m));
     };
-    label(st.lon, st.lat, st.shortName, 'map-label-station', 16);
-    if (inc?.lat !== undefined && inc?.lon !== undefined) label(inc.lon, inc.lat, 'INCIDENT', 'map-label-incident', 22);
+    label(st.lon, st.lat, st.shortName, 'map-label-station', 16, 3, 14, true);
+    if (inc?.lat !== undefined && inc?.lon !== undefined) label(inc.lon, inc.lat, 'INCIDENT', 'map-label-incident', 22, 0, 19, true);
     for (const p of points) {
       const short = POINT_KIND_SHORT[p.kind];
       const text = p.kind === 'lkp' || p.kind === 'pls' ? (p.label ? `${short} · ${p.label}` : short) : p.kind === 'significant' ? `★ ${p.label ?? 'Significant place'}` : p.label ?? short;
-      label(p.lon, p.lat, text, p.kind === 'lkp' ? 'map-label-ipp' : `map-label-pt k-${p.kind}`, p.kind === 'lkp' ? 18 : 14);
+      label(p.lon, p.lat, text, p.kind === 'lkp' ? 'map-label-ipp' : `map-label-pt k-${p.kind}`, p.kind === 'lkp' ? 18 : 14, POINT_PRIO[p.kind] ?? 4, p.kind === 'lkp' ? 15 : p.kind === 'pls' ? 12 : 10, p.kind === 'lkp');
     }
     void ipp;
     if (this.opts.rings !== false) {
       for (const km of s.map.ringsKm) {
         const north = ring(st.lat, st.lon, km, 4).geometry.coordinates[0][0];
-        label(north[0], north[1], `${km} km`, 'map-label-ring', -14);
+        label(north[0], north[1], `${km} km`, 'map-label-ring', -14, 9);
       }
     }
 
     if (this.opts.search) this.updateSearch(search);
+    this.scheduleDeclutter();
 
     const modeKey = `${s.mode.mode}:${inc?.id ?? search?.incident?.id ?? ''}`;
     const modeChanged = modeKey !== `${this.lastMode}:${this.lastIncidentId}`;
@@ -228,22 +232,29 @@ export class OpsMap {
     for (const mk of this.searchMarkers) mk.remove();
     this.searchMarkers = [];
     if (!search || !this.labelsOn) return;
-    const mark = (lon: number, lat: number, text: string, cls: string, colour: string, offsetY: number) => {
+    const mark = (lon: number, lat: number, text: string, cls: string, colour: string, offsetY: number, prio: number, dotR: number) => {
       const el = document.createElement('div');
       el.className = `map-label ${cls}`;
       el.textContent = text;
       el.style.setProperty('--team', colour);
+      tagLabel(el, prio, 'top', [0, offsetY], dotR);
+      el.dataset.text = text;
       this.searchMarkers.push(new maplibregl.Marker({ element: el, anchor: 'top', offset: [0, offsetY] }).setLngLat([lon, lat]).addTo(m));
+      return el;
     };
     for (const f of Object.values(search.latest)) {
       const team = search.teams.find((t) => t.id === f.teamId);
-      mark(f.lon, f.lat, f.callsign ?? f.name.split(' ')[0], 'map-label-team', team?.colour ?? '#9fb3c8', 12);
+      const el = mark(f.lon, f.lat, f.callsign ?? f.name.split(' ')[0], 'map-label-team', team?.colour ?? '#9fb3c8', 12, 2, 10);
+      if (team) {
+        el.dataset.team = String(team.id); // crew of one team close together share one label
+        el.dataset.teamName = team.name;
+      }
     }
     for (const t of search.targets) {
       if (t.status === 'cancelled') continue;
       const [lon, lat] = anchorOf(t.geometry);
       const team = search.teams.find((x) => x.id === t.teamId);
-      mark(lon, lat, team ? `${t.name} · ${team.name}` : t.name, `map-label-target ${t.status === 'done' ? 'done' : ''}`, team?.colour ?? '#9fb3c8', t.geometry.type === 'Point' ? 14 : 0);
+      mark(lon, lat, team ? `${t.name} · ${team.name}` : t.name, `map-label-target ${t.status === 'done' ? 'done' : ''}`, team?.colour ?? '#9fb3c8', t.geometry.type === 'Point' ? 14 : 6, t.status === 'done' ? 6 : 5, t.geometry.type === 'Point' ? 12 : 0);
     }
   }
 
@@ -260,6 +271,7 @@ export class OpsMap {
     const features = ipp ? rings.map((r) => ({ ...ring(ipp.lat, ipp.lon, r.km), properties: { pct: r.pct, km: r.km } })) : [];
     this.behaviourFeatures = features;
     (m.getSource('behaviour') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features });
+    this.scheduleDeclutter();
     if (!ipp) return;
     for (const r of rings) {
       // east edge, just outside the ring: clear of the station to the north and of the point itself
@@ -268,6 +280,7 @@ export class OpsMap {
       el.className = 'map-label map-label-behaviour';
       el.textContent = `${r.pct} % · ${r.km < 1 ? `${Math.round(r.km * 1000)} m` : `${r.km} km`}`;
       el.style.display = this.behaviourOn ? '' : 'none';
+      tagLabel(el, 7, 'left', [6, 0]);
       this.behaviourMarkers.push(new maplibregl.Marker({ element: el, anchor: 'left', offset: [6, 0] }).setLngLat([east[0], east[1]]).addTo(m));
     }
   }
@@ -310,6 +323,7 @@ export class OpsMap {
       el.title = `${s.id}: ${s.poaPct} %`;
       // width of the square in metres, so the label only shows once the square is big enough on screen
       const lons = ring.map((p) => p[0]);
+      tagLabel(el, 8, 'center', [0, 0]);
       el.dataset.widthM = String((Math.max(...lons) - Math.min(...lons)) * 111_320 * Math.cos((lat * Math.PI) / 180));
       this.segmentMarkers.push(new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lon, lat]).addTo(m));
     }
@@ -329,6 +343,60 @@ export class OpsMap {
       const el = mk.getElement();
       el.style.display = this.terrainOn && Number(el.dataset.widthM ?? 0) / mPerPx >= 40 ? '' : 'none';
     }
+    this.scheduleDeclutter();
+  }
+
+  // ---------------------------------------------------------------- label placement
+  private declutterQueued = false;
+  /** Re-place labels on the next frame (after a redraw, a zoom or a layer toggle). */
+  private scheduleDeclutter(): void {
+    if (this.declutterQueued) return;
+    this.declutterQueued = true;
+    requestAnimationFrame(() => {
+      this.declutterQueued = false;
+      this.declutterNow();
+    });
+  }
+  private declutterNow(): void {
+    const m = this.map;
+    if (!m) return;
+    const { width, height } = m.getContainer().getBoundingClientRect();
+    type Item = LabelIn & { mk: maplibregl.Marker; group?: string; shift?: [number, number] };
+    const all: Item[] = [], dots: Dot[] = [];
+    for (const mk of [...this.markers, ...this.searchMarkers, ...this.behaviourMarkers, ...this.segmentMarkers]) {
+      const el = mk.getElement();
+      if (!el.dataset.prio || el.style.display === 'none') continue;
+      if (el.dataset.text !== undefined && el.textContent !== el.dataset.text) el.textContent = el.dataset.text; // undo a merge
+      const p = m.project(mk.getLngLat());
+      const base: [number, number] = [Number(el.dataset.ox), Number(el.dataset.oy)];
+      if (p.x < -300 || p.y < -300 || p.x > width + 300 || p.y > height + 300) {
+        el.style.visibility = '';
+        mk.setOffset(base);
+        continue;
+      }
+      const dotR = Number(el.dataset.dot ?? 0);
+      if (dotR) dots.push({ x: p.x, y: p.y, r: dotR, owner: all.length });
+      all.push({ mk, x: p.x, y: p.y, w: el.offsetWidth, h: el.offsetHeight, anchor: el.dataset.anchor as LabelIn['anchor'], offset: base, prio: Number(el.dataset.prio), keep: el.dataset.keep === '1', group: el.dataset.team });
+    }
+    // crew of one team whose labels would overlap: one label, "Alpha ×3", centred on them
+    const merged = new Set<number>();
+    for (const c of groupOverlapping(all)) {
+      const lead = all[c[0]], el = lead.mk.getElement();
+      const cx = c.reduce((t, i) => t + all[i].x, 0) / c.length, cy = c.reduce((t, i) => t + all[i].y, 0) / c.length;
+      el.textContent = `${el.dataset.teamName ?? 'Team'} ×${c.length}`;
+      Object.assign(lead, { x: cx, y: cy, w: el.offsetWidth, h: el.offsetHeight, shift: [cx - lead.x, cy - lead.y] });
+      for (const i of c.slice(1)) merged.add(i);
+      for (const d of dots) if (d.owner !== undefined && c.includes(d.owner)) d.owner = c[0]; // may sit over its own crew
+    }
+    const idx: number[] = [];
+    all.forEach((it, i) => (merged.has(i) ? (it.mk.getElement().style.visibility = 'hidden') : idx.push(i)));
+    const remap = new Map(idx.map((i, k) => [i, k]));
+    const ds = dots.map((d) => ({ ...d, owner: d.owner === undefined ? undefined : remap.get(d.owner) ?? -1 }));
+    declutter(idx.map((i) => all[i]), ds, { w: width, h: height }).forEach((r, k) => {
+      const it = all[idx[k]], el = it.mk.getElement();
+      el.style.visibility = r ? '' : 'hidden';
+      if (r) it.mk.setOffset([r.offset[0] + (it.shift?.[0] ?? 0), r.offset[1] + (it.shift?.[1] ?? 0)]);
+    });
   }
   private heatOn = true;
   private shownArea?: Pick<SearchAreaResult, 'regions' | 'heat' | 'segments' | 'corridors'>;
@@ -379,10 +447,12 @@ export class OpsMap {
     if (id === 'behaviour-line') {
       this.behaviourOn = on;
       for (const mk of this.behaviourMarkers) mk.getElement().style.display = on ? '' : 'none';
+      this.scheduleDeclutter();
     }
     if (id === 'labels') {
       this.labelsOn = on;
       for (const mk of this.searchMarkers) mk.getElement().style.display = on ? '' : 'none';
+      this.scheduleDeclutter();
       return;
     }
     if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
@@ -429,6 +499,19 @@ export class OpsMap {
 }
 
 /** All planning points; falls back to the single IPP for an older server (Pi mirror talking to a not-yet-upgraded host). */
+/** Placement order for point labels (lower first): the LKP, then PLS and finds, then the rest. */
+const POINT_PRIO: Partial<Record<string, number>> = { lkp: 0, pls: 1, find: 1 };
+
+/** Mark an HTML label for placement: its priority, how it is pinned, its usual offset and its point's dot. */
+function tagLabel(el: HTMLElement, prio: number, anchor: LabelIn['anchor'], offset: [number, number], dotR = 0, keep = false): void {
+  el.dataset.prio = String(prio);
+  el.dataset.anchor = anchor;
+  el.dataset.ox = String(offset[0]);
+  el.dataset.oy = String(offset[1]);
+  if (dotR) el.dataset.dot = String(dotR);
+  if (keep) el.dataset.keep = '1';
+}
+
 function pointsOf(search?: SearchSnapshot): PlanningPointRow[] {
   const inc = search?.incident;
   if (!inc) return [];
