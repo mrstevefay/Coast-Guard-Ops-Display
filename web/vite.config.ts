@@ -52,6 +52,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // push alerts: the handler lives in a plain file next to the generated worker
+        importScripts: ['/m/push-sw.js'],
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         globIgnores: ['index.html', 'sm/**'],
         navigateFallback: '/m/index.html',

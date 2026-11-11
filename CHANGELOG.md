@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Callout alerts on crew phones** (backlog item 2). Web Push, opt-in per phone from the Status page or More → Callout alerts, with a test button.
+  - **Sent for:** a callout (everyone with alerts on), a stand-down by a person (those who responded), a new target (that team) and an account waiting for approval (admins). A tasking without a callout stays quiet.
+  - **iPhone:** needs the app on the Home Screen; the app says so instead of failing.
+  - **Safety:** payloads are encrypted for the phone; subscriptions are accepted only for Apple, Google, Mozilla and Windows push services; dead phones are dropped. The server's key pair is made on first use and kept in the database.
+  - Settings → Users shows who has alerts on. Routes: `GET /api/push/key`, `POST /api/push/subscriptions|unsubscribe|test`. Migration 12. New dependency: `web-push` 3.6.7.
 - **Organising teams is quicker.** On the console's Teams tab:
   - **Drag and drop:** drag people onto a team, onto + New team, between teams, or back to Waiting. Dragging one of several ticked people moves them all.
   - **Tap instead:** tick people and tap **+ Add here** on a team, or tap a member for Make leader, Move to, Show on the map and Remove.

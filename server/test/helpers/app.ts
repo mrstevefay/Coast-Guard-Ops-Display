@@ -8,6 +8,7 @@ import { CalloutManager } from '../../src/callout.js';
 import { loadConfig, type AppConfig } from '../../src/config.js';
 import { openDb } from '../../src/db/index.js';
 import { buildServer } from '../../src/http.js';
+import { Push } from '../../src/push.js';
 import { Scheduler } from '../../src/scheduler.js';
 import { Devices } from '../../src/search/devices.js';
 import { SearchService } from '../../src/search/service.js';
@@ -47,7 +48,15 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
     search = new SearchService(db, cfg, store, users, tracking);
     tracking.context = search;
   }
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
+  // push with a recording sender: nothing leaves the test
+  const pushed: { endpoint: string; payload: { title: string; body: string; tag: string; url: string; urgent: boolean } }[] = [];
+  const pushFail = new Map<string, number>();
+  const push = new Push(db, cfg.auth.publicUrl, quiet, async (sub, payload) => {
+    const status = pushFail.get(sub.endpoint);
+    if (status) throw Object.assign(new Error('push service refused'), { statusCode: status });
+    pushed.push({ endpoint: sub.endpoint, payload: JSON.parse(payload) });
+  });
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, push });
   await app.ready();
 
   const seed = {
@@ -70,5 +79,5 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
     fs.rmSync(cfg.server.dataDir, { recursive: true, force: true });
   };
 
-  return { app, hub, cfg, db, users, sessions, audit, store, callout, devices, tracking, search: search!, seed, login, close };
+  return { app, hub, cfg, db, users, sessions, audit, store, callout, devices, tracking, search: search!, seed, login, close, push, pushed, pushFail };
 }

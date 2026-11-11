@@ -331,4 +331,21 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE users ADD COLUMN sm_qualified INTEGER NOT NULL DEFAULT 0;
   `,
+  // 12 — web push: one row per phone a member turned alerts on for, and the server's own key pair
+  // (app_secrets) that identifies it to the push services.
+  `
+  CREATE TABLE app_secrets (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE push_subscriptions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    last_ok_at TEXT,
+    failures INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX push_subscriptions_user ON push_subscriptions(user_id);
+  `,
 ];

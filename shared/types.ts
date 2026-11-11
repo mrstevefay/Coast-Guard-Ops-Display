@@ -34,6 +34,8 @@ export interface ModeState {
   /** Last incident, kept after stand-down for the muster/debrief. */
   lastIncident?: Incident;
   changedAt: string;
+  /** Why the last callout ended: 'manual', 'auto-timeout'… (set on stand-down). */
+  standdownReason?: string;
 }
 
 // ---------------------------------------------------------------- weather
@@ -309,6 +311,8 @@ export interface UserPublic {
   deviceCount?: number;
   /** Holds the search management qualification. */
   smQualified?: boolean;
+  /** Phones this member has callout alerts turned on for. */
+  alertPhones?: number;
   /** Joined from a group invite and waiting for an admin to approve. */
   pending?: boolean;
   /** The invite's label, when the account was made from an invite link. */

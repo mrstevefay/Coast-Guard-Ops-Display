@@ -7,7 +7,12 @@ Candidate work after Phase 2, roughly in priority order. Nothing here is schedul
 Turn a pager message or WhatsApp group post into `POST /api/callout` with the bridge token,
 and `standdown` likewise. External process; no schema change. See README → Phase 3 hooks.
 
-## 2. Push notifications on callout
+## 2. Push notifications on callout (done)
+
+Shipped: see README → Callout alerts. Left for later: alerts for a tasking opened without a
+callout, per-member quiet hours, and a console view of delivery results per callout.
+
+Original note:
 
 Web Push to crew phones when an incident opens (VAPID keys, `push_subscriptions` table,
 service-worker handler in the crew PWA). Falls back to the pager, never replaces it.

@@ -127,7 +127,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 
 **Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
 `GET /api/incidents` (history), `GET /api/incidents/:id/replay`, `GET /api/incidents/:id/report[.html]` (manager);
-`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…`, `POST /api/users/:id/approve|reject`, `GET|POST|DELETE /api/invites` (admin); `GET|POST /api/join/:token` (public, rate-limited); `GET|POST|DELETE /api/admin/display-keys`,
+`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…`, `POST /api/users/:id/approve|reject`, `GET|POST|DELETE /api/invites` (admin); `GET|POST /api/join/:token` (public, rate-limited); `GET /api/push/key`, `POST /api/push/subscriptions|unsubscribe|test` (member); `GET|POST|DELETE /api/admin/display-keys`,
 `GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
 `GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
@@ -343,6 +343,25 @@ Crew who hold the **search management qualification** (a tick box under Settings
 - Links expire after 1, 7 or 30 days and can be withdrawn. The token is only in the link's `#` fragment, so it never reaches server logs, and the database keeps only its hash. The link is shown once, when it is made.
 
 **+ Add user** still creates an account with a temporary password, for anyone without a phone to hand.
+
+## Callout alerts (push notifications)
+
+Crew can get a notification on their phone, opt-in per phone: the Status page offers it once, and **More → Callout alerts** turns it on or off and sends a test. It backs up the pager and never replaces it: delivery depends on the phone's notification service and on the member having turned it on.
+
+| Alert | Who gets it |
+|---|---|
+| **Callout** raised (pager bridge, console or API) | Every active member with alerts on |
+| **Stand down** by a person (not the display's own timeout) | Those who responded or are in a team |
+| **New target** for a team | That team's members |
+| **Account waiting for approval** (group invite) | Admins |
+
+A tasking opened without a callout is quiet. Settings → Users shows who has alerts on.
+
+- **iPhone and iPad:** alerts only work once the app is on the Home Screen (Share → Add to Home Screen), iOS 16.4 or later. Android works in Chrome, installed or not.
+- **HTTPS is required**, with `PUBLIC_URL` set to the site's `https://` address.
+- **Keys:** the server makes its own VAPID key pair on first use and keeps it in the database (`app_secrets`), so it is in the backups. Restoring an older database, or losing it, means crew turn alerts on again; the app does this by itself the next time it is opened.
+- **Privacy:** payloads are encrypted for the phone, so Apple, Google or Mozilla cannot read them. An alert carries the callout text or a target name, never subject details, positions or contacts.
+- Subscriptions are accepted only for the known push services, dropped when the service says the phone is gone, and removed with the account. Uses `web-push` 3.6.7. Migration 12.
 
 ## Placing points and positions
 

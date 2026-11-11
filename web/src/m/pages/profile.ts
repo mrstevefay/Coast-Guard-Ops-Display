@@ -6,6 +6,8 @@ import { store } from '../store';
 import { tracking } from '../tracking';
 import { btn, card, err, field, formData, note, toast, wireActions } from '../ui';
 import { setupCard, wireSetup } from './status';
+import { alertsCard, wireAlerts } from './alerts';
+import { pushAlerts } from '../push';
 
 interface NewDevice {
   device: DevicePublic;
@@ -18,6 +20,7 @@ export async function renderMore(root: HTMLElement): Promise<void> {
   const me = store.s.me!;
   root.innerHTML = `
     ${card('You', `<div class="big-name">${esc(me.name)}</div><div class="muted">${esc(me.email)} · ${esc(me.role)}${me.callsign ? ` · ${esc(me.callsign)}` : ''}</div>`)}
+    ${alertsCard()}
     <section class="card" id="devices"><h2>Phones (OwnTracks)</h2>${note('Loading…')}</section>
     ${card('Account', `${btn('Change password', 'password', 'ghost wide')}${btn('Privacy notice', 'privacy', 'ghost wide')}${store.isAdmin ? btn('Admin: users & displays', 'admin', 'ghost wide') : ''}${btn('Sign out', 'logout', 'danger wide')}`)}
     ${card('Install', note('iPhone: Share → Add to Home Screen. Android: menu → Install app. Installed, it opens full screen and stays signed in.'))}
@@ -38,6 +41,17 @@ export async function renderMore(root: HTMLElement): Promise<void> {
       await tracking.prepare(); // if that was this phone, offer the setup again
       await renderDevices(root.querySelector('#devices')!);
     },
+  });
+  // the alerts card follows the phone's state (on, off, blocked) without redrawing the whole page
+  wireAlerts(root);
+  const key = () => `${pushAlerts.state}:${pushAlerts.busy}`;
+  let shown = key();
+  const stop = store.subscribe(() => {
+    const el = root.querySelector('#alerts');
+    if (!el) return stop();
+    if (key() === shown) return;
+    shown = key();
+    el.outerHTML = alertsCard();
   });
   await renderDevices(root.querySelector('#devices')!);
 }
@@ -140,7 +154,7 @@ export function renderPrivacy(root: HTMLElement): void {
   const accepted = Boolean(store.s.me?.privacyAcceptedAt);
   root.innerHTML = card('Privacy notice', `
     <p>This app is run by Howth Coast Guard for crew coordination during callouts.</p>
-    <p><b>What is collected:</b> your name, email, callsign and role; whether you are responding to an incident and your ETA; and, while an incident is open and you are responding or in a search team, your phone's position (latitude, longitude, altitude, accuracy, speed, battery) sent by the OwnTracks app.</p>
+    <p><b>What is collected:</b> your name, email, callsign and role; whether you are responding to an incident and your ETA; and, while an incident is open and you are responding or in a search team, your phone's position (latitude, longitude, altitude, accuracy, speed, battery) sent by the OwnTracks app. If you turn on callout alerts, the address your phone's notification service gives this app is kept so alerts can reach it; turning alerts off removes it.</p>
     <p><b>Who sees it:</b> other logged-in crew during an incident, the search manager and station officers, and the station wall display. Positions are visible to the crew responding to the same incident.</p>
     <p><b>Retention:</b> incident records, team assignments and track points are kept as an operational record of the search. Your last known position is cleared after 24 hours of inactivity. You can ask the station admin to remove your account; it is anonymised and track points lose your name.</p>
     <p><b>Your choices:</b> tracking only runs when you press "I'm responding" or are placed in a team, and only while OwnTracks is installed and linked. You can revoke a phone at any time under More → Phones.</p>

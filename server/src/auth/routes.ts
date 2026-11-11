@@ -3,12 +3,14 @@ import QRCode from 'qrcode';
 import type { Role } from '../../../shared/types.js';
 import type { Audit } from '../audit.js';
 import { cookieOptions, requireAuth, SESSION_COOKIE, type AuthCtx } from './middleware.js';
+import type { Push } from '../push.js';
 import { InviteError, type Invites } from './invites.js';
 import { toPublic } from './users.js';
 
 export interface AuthRoutesDeps extends AuthCtx {
   audit: Audit;
   invites: Invites;
+  push?: Push;
 }
 
 /** Per-email login throttle (20/hour) on top of the per-IP rate limit. */
@@ -24,7 +26,7 @@ function emailThrottled(email: string): boolean {
 }
 
 export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promise<void> {
-  const { cfg, sessions, users, audit, invites } = d;
+  const { cfg, sessions, users, audit, invites, push } = d;
   const cookieMaxAge = cfg.auth.sessionDays * 86400;
   const errorJson = (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) });
 
@@ -99,7 +101,8 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
   app.get('/api/users', { preHandler: requireAuth(d, 'manager') }, async () => {
     const counts = users.deviceCounts();
     const via = invites.labelsByUser();
-    return { users: users.list().map((u) => toPublic(u, { deviceCount: counts.get(u.id) ?? 0, invitedVia: via.get(u.id) })) };
+    const alerts = push?.counts();
+    return { users: users.list().map((u) => toPublic(u, { deviceCount: counts.get(u.id) ?? 0, invitedVia: via.get(u.id), ...(alerts ? { alertPhones: alerts.get(u.id) ?? 0 } : {}) })) };
   });
 
   app.post<{ Body: { name?: string; email?: string; callsign?: string; role?: Role; password?: string } }>('/api/users', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
@@ -173,6 +176,7 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
     if (me.kind === 'user' && me.userId === id) return reply.code(400).send({ error: 'you cannot delete yourself' });
     if (!users.byId(id)) return reply.code(404).send({ error: 'user not found' });
     users.anonymise(id);
+    push?.forgetUser(id);
     audit.log(me, req.ip, 'user.anonymised', { type: 'user', id });
     return { ok: true };
   });
@@ -226,7 +230,11 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
           password: String(req.body?.password ?? ''),
         });
         audit.log(undefined, req.ip, 'invite.accepted', { type: 'user', id: user.id }, { invite: user.invite_id, pending });
-        if (pending) return { pending: true };
+        if (pending) {
+          // tell the admins someone is waiting, so the new member is not left wondering
+          void push?.notify(users.list().filter((u) => u.role === 'admin' && u.active === 1).map((u) => u.id), { title: 'Account waiting for approval', body: `${user.name} joined from an invite link.`, tag: 'approval', url: '/sm/#settings/users' });
+          return { pending: true };
+        }
         const token = sessions.create(user, { userAgent: req.headers['user-agent'], ip: req.ip });
         reply.setCookie(SESSION_COOKIE, token, cookieOptions(cfg, cookieMaxAge));
         return { user: toPublic(user) };

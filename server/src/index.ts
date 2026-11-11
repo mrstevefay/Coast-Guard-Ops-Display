@@ -1,3 +1,4 @@
+import { Push } from './push.js';
 import path from 'node:path';
 import { Audit } from './audit.js';
 import { backupDb } from './backup.js';
@@ -63,7 +64,8 @@ async function main() {
   }
 
   const backupDir = path.join(cfg.server.dataDir, 'backups');
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, backupDir, settings, rebuildProvider });
+  const push = new Push(db, cfg.auth.publicUrl, logStub);
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, backupDir, settings, rebuildProvider, push });
   // Nightly housekeeping at 03:30 Europe/Dublin: backup first, then retention.
   const stopNightly = scheduleDaily(3, 30, () => {
     backupDb(db, backupDir, cfg.retention.backupKeep)

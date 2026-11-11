@@ -18,6 +18,7 @@ OwnTracks app is installed and linked).
 | Login sessions (hashed token, device/browser, IP) | Each sign-in | Up to 180 days |
 | Response status and ETA | When you tap Responding / On scene / Stand down | With the incident record |
 | Position (lat/lon, altitude, accuracy, speed, battery) from OwnTracks | Only while an incident is open **and** you are responding or in a team | Track points: indefinitely as the operational record (configurable); last known position cleared after 24 h |
+| Push address for callout alerts (issued by your phone's notification service: Apple, Google or Mozilla) | Only if you turn alerts on, per phone | Until you turn alerts off, the push service reports the phone gone, or your account is removed |
 | Team assignment and callsign | When the search manager assigns you | With the incident record |
 | Audit log of changes (who created teams, targets, users) | On each change | 2 years |
 
@@ -49,3 +50,11 @@ incident record and only to run the search.
 - **Retention:** the record and photo are deleted with the incident. Admins can remove the
   photo at any time (console → Subject → Remove photo).
 - **Crew:** do not screenshot or forward these details; they are for the search only.
+
+## Callout alerts (push notifications)
+
+Alerts are opt-in on each phone. They are sent through the phone maker's notification service
+(Apple, Google or Mozilla), encrypted so that only your phone can read them; the service sees
+that a message was sent to your phone and when, not what it says. An alert carries the callout
+text, a stand-down, or the name of a target given to your team. It never carries the subject's
+name or details, positions, or contacts. Alerts appear on the lock screen like a pager message.

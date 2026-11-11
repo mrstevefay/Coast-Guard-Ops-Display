@@ -13,6 +13,8 @@ import { runRetention } from './search/retention.js';
 import { requireAuth, resolvePrincipal, type AuthCtx } from './auth/middleware.js';
 import { timingSafeEqualStr } from './auth/password.js';
 import { Invites } from './auth/invites.js';
+import type { Push } from './push.js';
+import { attachPushTriggers, pushRoutes } from './pushRoutes.js';
 import { authRoutes } from './auth/routes.js';
 import type { Sessions } from './auth/sessions.js';
 import type { Users } from './auth/users.js';
@@ -53,6 +55,8 @@ export interface ServerDeps {
   settings?: Settings;
   /** Rebuild one provider from the current config after a setting changed. */
   rebuildProvider?: (name: string) => Promise<void>;
+  /** Web push to crew phones; alerts are off when absent. */
+  push?: Push;
 }
 
 export interface BuiltServer {
@@ -196,7 +200,12 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
 
   // ---- accounts + tracking (only when auth is on; in open mode nobody has an identity) ----
   if (!cfg.auth.open) {
-    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit, invites: new Invites(deps.db, deps.users) }));
+    const push = deps.push;
+    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit, invites: new Invites(deps.db, deps.users), push }));
+    if (push) {
+      await app.register(async (sub) => pushRoutes(sub, { ...auth, audit: deps.audit, push }));
+      attachPushTriggers(push, store, deps.search, cfg.station.shortName);
+    }
     if (cfg.search.enabled) {
       await app.register(async (sub) =>
         owntracksRoutes(sub, {

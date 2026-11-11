@@ -85,13 +85,14 @@ async function usersSection(el: HTMLElement): Promise<void> {
         <table class="set-table"><tbody>${waiting.map((u) => `<tr><td><b>${esc(u.name)}</b>${u.callsign ? ` <span class="muted">${esc(u.callsign)}</span>` : ''}</td><td>${esc(u.email)}</td><td class="muted small">via ${esc(u.invitedVia ?? 'invite link')}</td>
           ${admin ? `<td class="acts"><button class="mini primary" data-act="approve" data-id="${u.id}">Approve</button><button class="mini danger" data-act="reject" data-id="${u.id}">Turn down</button></td>` : ''}</tr>`).join('')}</tbody></table>
         <p class="muted small">They joined from a group invite link. Approve only people you know: crew see live positions and subject details.</p></div>` : ''}
-      <table class="set-table"><thead><tr><th>Name</th><th>Email</th><th>Callsign</th><th>Role</th><th>Phones</th><th>Last login</th><th>State</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>
+      <table class="set-table"><thead><tr><th>Name</th><th>Email</th><th>Callsign</th><th>Role</th><th>Phones</th><th>Alerts</th><th>Last login</th><th>State</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>
       ${users.map((u) => `<tr class="${u.active ? '' : 'inactive'}" data-id="${u.id}">
         <td><b>${esc(u.name)}</b>${u.smQualified ? ' <span class="tag-sm" title="Search management qualified">SM</span>' : ''}${u.id === myId ? ' <span class="muted small">(you)</span>' : ''}</td>
         <td>${esc(u.email)}</td>
         <td>${esc(u.callsign ?? '')}</td>
         <td>${admin ? roleSelect('role', u.role, `data-role="${u.id}" ${u.id === myId ? 'disabled title="You cannot change your own role"' : ''}`) : esc(u.role)}</td>
         <td>${u.deviceCount ?? 0}</td>
+        <td>${u.alertPhones ? badge('on', 'green') : '<span class="muted">off</span>'}</td>
         <td>${u.lastLoginAt ? fmtDT(u.lastLoginAt) : '<span class="muted">never</span>'}</td>
         <td>${u.active ? badge('active', 'green') : badge('inactive', 'grey')}${u.mustChangePassword ? ' ' + badge('temp pw', 'amber') : ''}${!u.privacyAcceptedAt && u.active ? ' ' + badge('privacy pending', 'grey') : ''}</td>
         ${admin ? `<td class="acts"><button class="mini" data-act="edit" data-id="${u.id}">Edit</button><button class="mini" data-act="reset" data-id="${u.id}">Reset pw</button>${u.id === myId ? '' : `<button class="mini" data-act="toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? 'Deactivate' : 'Activate'}</button><button class="mini danger" data-act="remove" data-id="${u.id}">Remove</button>`}</td>` : ''}

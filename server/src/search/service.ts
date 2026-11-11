@@ -436,6 +436,7 @@ export class SearchService extends EventEmitter implements TrackContext {
     );
     if (input.teamId) this.syncTeamStatus(input.teamId);
     this.changed();
+    if (input.teamId) this.announceTarget(r.lastInsertRowid, name, input.teamId);
     return this.target(r.lastInsertRowid)!;
   }
 
@@ -475,7 +476,14 @@ export class SearchService extends EventEmitter implements TrackContext {
     this.syncTeamStatus(teamId);
     if (tr.team_id && tr.team_id !== teamId) this.syncTeamStatus(tr.team_id);
     this.changed();
+    if (teamId && teamId !== tr.team_id) this.announceTarget(id, patch.name?.trim() || tr.name, teamId);
     return this.target(id)!;
+  }
+
+  /** A team has a new target: tell whoever alerts the crew (push). */
+  private announceTarget(targetId: number, targetName: string, teamId: number): void {
+    const team = this.team(teamId);
+    if (team?.members.length) this.emit('target-assigned', { targetId, targetName, teamName: team.name, userIds: team.members.map((m) => m.userId) });
   }
 
   deleteTarget(id: number): void {

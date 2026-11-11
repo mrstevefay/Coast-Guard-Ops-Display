@@ -15,6 +15,7 @@ import { renderTeam } from './pages/team';
 import { currentRoute, navigate, onRoute, type Route } from './router';
 import { store } from './store';
 import { tracking } from './tracking';
+import { pushAlerts } from './push';
 
 const app = document.getElementById('app')!;
 let ws: WsClient | undefined;
@@ -76,6 +77,8 @@ function start(): void {
   // First open on a phone: fetch an OwnTracks credential so the Status page can offer the
   // one-tap setup (or hand it over on the first "I'm responding").
   tracking.prepare().catch(() => {});
+  // callout alerts: find out where this phone stands, and re-register it for whoever is signed in
+  pushAlerts.refresh().catch(() => {});
   store.subscribe(() => {
     renderHeader();
     // never redraw under someone typing (a find note, a form): the next update after they leave the field will

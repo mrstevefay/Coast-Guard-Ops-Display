@@ -52,7 +52,7 @@ export class CalloutManager {
 
   standdown(reason = 'manual'): ModeState {
     const cur = this.store.getMode();
-    const mode: ModeState = { mode: 'standby', lastIncident: cur.incident ?? cur.lastIncident, changedAt: new Date().toISOString() };
+    const mode: ModeState = { mode: 'standby', lastIncident: cur.incident ?? cur.lastIncident, changedAt: new Date().toISOString(), standdownReason: reason };
     this.apply(mode);
     this.log.info({ reason }, 'STAND DOWN');
     return mode;

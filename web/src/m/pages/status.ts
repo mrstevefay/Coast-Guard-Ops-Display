@@ -9,6 +9,7 @@ import { renderWarnings } from '../../panels/warnings';
 import { store } from '../store';
 import { tracking } from '../tracking';
 import { btn, card, note, statusBadge, toast, wireActions } from '../ui';
+import { alertsOffer, wireAlerts } from './alerts';
 
 /** One-tap OwnTracks setup for this phone: the button *is* the config link. */
 export function setupCard(): string {
@@ -99,8 +100,9 @@ export function renderStatus(root: HTMLElement): void {
   let html = renderWarnings(state);
   if (!inc) {
     html += card('Standby', `<p>No active callout or tasking.</p>${state.mode.lastIncident ? `<p class="muted">Last: ${esc(state.mode.lastIncident.text.slice(0, 120))}</p>` : ''}`);
-    root.innerHTML = html;
+    root.innerHTML = html + alertsOffer();
     wireSetup(root);
+    wireAlerts(root);
     return;
   }
 
@@ -168,6 +170,7 @@ export function renderStatus(root: HTMLElement): void {
   if (!answered) html += incidentCard + respondCard + setup + subject + others;
   else if (targetCard) html += targetCard + teamCard + subject + respondCard + incidentCard + setup + noFix + others;
   else html += respondCard + setup + noFix + (teamCard || '') + subject + incidentCard + others;
+  html += alertsOffer(); // last: never in the way of responding
 
   root.innerHTML = html;
   root.querySelector<HTMLTextAreaElement>('#find-note')?.addEventListener('input', (ev) => { findNote = (ev.target as HTMLTextAreaElement).value; });
@@ -177,6 +180,7 @@ export function renderStatus(root: HTMLElement): void {
     if (more) more.textContent = subjectOpen ? 'Less' : 'Details';
   });
   wireSetup(root);
+  wireAlerts(root);
   wireActions(root, {
     respond: () => respond('responding'),
     'on-scene': () => respond('on-scene'),
