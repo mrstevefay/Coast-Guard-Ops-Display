@@ -307,6 +307,8 @@ export interface UserPublic {
   privacyAcceptedAt?: string;
   lastLoginAt?: string;
   deviceCount?: number;
+  /** Holds the search management qualification. */
+  smQualified?: boolean;
   /** Joined from a group invite and waiting for an admin to approve. */
   pending?: boolean;
   /** The invite's label, when the account was made from an invite link. */
@@ -543,6 +545,8 @@ export interface ResponderRow {
   teamId?: number;
   /** Callsign within the team, e.g. "Alpha-1" (set when in a team). */
   teamCallsign?: string;
+  /** Holds the search management qualification. */
+  sm?: boolean;
 }
 
 export interface TeamMember {
@@ -551,6 +555,8 @@ export interface TeamMember {
   /** Alpha-0 is the leader. */
   callsign: string;
   position: number;
+  /** Holds the search management qualification. */
+  sm?: boolean;
 }
 
 export interface Team {

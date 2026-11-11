@@ -298,6 +298,16 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     }
   });
 
+  app.post<{ Params: { id: string }; Body: { size?: number; userIds?: number[] } }>('/api/incidents/:id/teams/split', { preHandler: manager }, async (req, reply) => {
+    try {
+      const teams = search.splitIntoTeams(req.params.id, Number(req.body?.size ?? 4), req.body?.userIds);
+      audit.log(req.principal, req.ip, 'teams.split', { type: 'incident', id: req.params.id }, { size: req.body?.size, teams: teams.map((t) => ({ id: t.id, name: t.name, userIds: t.members.map((m) => m.userId) })) });
+      return { teams };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
   app.patch<{ Params: { id: string }; Body: { name?: string; colour?: string; searchWidthM?: number; status?: TeamStatus; leaderUserId?: number | null } }>('/api/teams/:id', { preHandler: manager }, async (req, reply) => {
     try {
       const team = search.updateTeam(Number(req.params.id), req.body ?? {});
@@ -312,6 +322,27 @@ export async function searchRoutes(app: FastifyInstance, d: SearchRoutesDeps): P
     try {
       const team = search.setMembers(Number(req.params.id), req.body?.userIds ?? [], req.body?.leaderUserId);
       audit.log(req.principal, req.ip, 'team.members', { type: 'team', id: team.id }, { userIds: req.body?.userIds, leader: req.body?.leaderUserId });
+      return { team };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
+  // add-only and remove-only, so two quick changes (or two managers) never overwrite each other
+  app.post<{ Params: { id: string }; Body: { userIds?: number[] } }>('/api/teams/:id/members', { preHandler: manager }, async (req, reply) => {
+    try {
+      const team = search.addMembers(Number(req.params.id), req.body?.userIds ?? []);
+      audit.log(req.principal, req.ip, 'team.members.added', { type: 'team', id: team.id }, { userIds: req.body?.userIds });
+      return { team };
+    } catch (e) {
+      return bad(reply, e);
+    }
+  });
+
+  app.delete<{ Params: { id: string; userId: string } }>('/api/teams/:id/members/:userId', { preHandler: manager }, async (req, reply) => {
+    try {
+      const team = search.removeMember(Number(req.params.id), Number(req.params.userId));
+      audit.log(req.principal, req.ip, 'team.members.removed', { type: 'team', id: team.id }, { userId: Number(req.params.userId) });
       return { team };
     } catch (e) {
       return bad(reply, e);

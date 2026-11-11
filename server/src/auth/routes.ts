@@ -118,7 +118,7 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
     }
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; email?: string; callsign?: string | null; role?: Role; active?: boolean } }>(
+  app.patch<{ Params: { id: string }; Body: { name?: string; email?: string; callsign?: string | null; role?: Role; active?: boolean; smQualified?: boolean } }>(
     '/api/users/:id',
     { preHandler: requireAuth(d, 'admin') },
     async (req, reply) => {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Organising teams is quicker.** On the console's Teams tab:
+  - **Drag and drop:** drag people onto a team, onto + New team, between teams, or back to Waiting. Dragging one of several ticked people moves them all.
+  - **Tap instead:** tick people and tap **+ Add here** on a team, or tap a member for Make leader, Move to, Show on the map and Remove.
+  - **+ Add crew** puts anyone on the roster in a team, including crew who have not responded in the app.
+  - **Split** deals the waiting or ticked crew into teams of two to six.
+  - **Search management qualification:** a tick box per user, shown as an **SM** tag. Split picks SM-qualified crew as leaders first.
+  - Moving a leader away leaves the old team marked "No leader" instead of pointing at someone who has left. Deactivated accounts can no longer be put in a team.
+  - Routes: `POST /api/teams/:id/members` (add only), `DELETE /api/teams/:id/members/:userId`, `POST /api/incidents/:id/teams/split`. Migration 11 adds `users.sm_qualified`.
 - **Crew invite links.** Settings → Users → **Invite crew** makes a link and QR code instead of a temporary password.
   - **One person:** the link works once and signs them in with a password they chose.
   - **Group:** for a crew night or the crew WhatsApp group, up to 100 uses. Accounts wait for an admin to **Approve** or **Turn down** them, and until then sign-in says the account is waiting.

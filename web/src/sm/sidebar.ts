@@ -7,6 +7,7 @@ import { esc, fmtAgeShort, fmtTime } from '../format';
 import { toast } from '../m/ui';
 import { closeModal, confirmBox, modal } from './modal';
 import { cs } from './state';
+import { boardBusy, teamMembersHtml, waitingHtml, wireTeamBoard } from './teamboard';
 
 export interface SidebarActions {
   locate: (lon: number, lat: number, zoom?: number) => void;
@@ -71,9 +72,11 @@ export function renderSidebar(root: HTMLElement, a: SidebarActions): void {
     return;
   }
   delete root.dataset.behaviourKey;
+  // never redraw the board under a drag, or under a team name being typed
+  if (cs.s.tab === 'teams' && (boardBusy() || root.querySelector('.team-name:focus'))) return;
   let body = '';
   if (!search?.incident) body = `<p class="muted pad">No open tasking. Start one from the top bar (New tasking); a pager callout opens one automatically.</p>`;
-  else if (cs.s.tab === 'teams') body = respondersTab(search.responders, search.teams) + teamsTab(search.teams, search.responders, search.targets) + targetsTab(search.targets, search.teams);
+  else if (cs.s.tab === 'teams') body = waitingHtml(search.responders, search.teams) + teamsTab(search.teams, search.responders, search.targets) + targetsTab(search.targets, search.teams);
   else body = `<p class="muted pad">No open tasking.</p>`;
   root.innerHTML = `<div class="tabs-sm">${tabs}</div><div class="sb-body">${body}</div>`;
   wireTabs(root);
@@ -115,42 +118,12 @@ function pointsBar(): string {
     </div>`;
 }
 
-function respondersTab(responders: ResponderRow[], teams: Team[]): string {
-  const latest = cs.s.search!.latest;
-  const inTeam = new Set(teams.flatMap((t) => t.members.map((m) => m.userId)));
-  const active = responders.filter((r) => r.status !== 'stood-down' && r.status !== 'unavailable' && !inTeam.has(r.userId));
-  if (!active.length) return `<div class="k pad-k">Waiting for a team</div><p class="muted small pad0 pad-x">${responders.some((r) => r.status === 'responding' || r.status === 'on-scene') ? 'Everyone responding is in a team.' : 'Nobody has responded yet.'}</p>`;
-  const rows = active
-    .map((r) => {
-      const fix = latest[r.userId];
-      const age = fix ? Date.now() / 1000 - fix.tst : undefined;
-      const team = teams.find((t) => t.id === r.teamId);
-      return `<label class="row ${cs.s.selected.has(r.userId) ? 'sel' : ''}">
-        <input type="checkbox" data-sel="${r.userId}" ${cs.s.selected.has(r.userId) ? 'checked' : ''} />
-        <div class="grow">
-          <div><b>${esc(r.name)}</b> ${r.teamCallsign ? `<span class="cs" style="--team:${esc(team?.colour ?? '#9fb3c8')}">${esc(r.teamCallsign)}</span>` : ''} ${badge(r.status)}${r.etaMin && r.status === 'responding' ? ` <span class="muted">ETA ${r.etaMin} m</span>` : ''}</div>
-          <div class="muted small">${fix ? `fix ${fmtAgeShort(fix.tst)} ago${fix.alt !== undefined ? ` · ${Math.round(fix.alt)} m` : ''}${fix.batt !== undefined ? ` · 🔋${fix.batt}%` : ''}${age !== undefined && age > 120 ? ' <span class="amber">STALE</span>' : ''}` : '<span class="amber">no position</span>'}${r.note ? ` · ${esc(r.note)}` : ''}</div>
-        </div>
-        ${fix ? `<button class="mini" data-locate="${fix.lon},${fix.lat}" title="Locate">◎</button>` : ''}
-      </label>`;
-    })
-    .join('');
-  const n = cs.s.selected.size;
-  return `<div class="k pad-k">Waiting for a team · ${active.length}</div>${rows}
-    <div class="assign-bar ${n ? '' : 'disabled'}">
-      <span>${n} selected</span>
-      <select id="assign-team"><option value="">Assign to…</option>${teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}<option value="new">+ New team</option></select>
-      <button class="mini" data-action="clear-sel">clear</button>
-    </div>`;
-}
-
 function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]): string {
-  const latest = cs.s.search!.latest;
   const daylight = cs.s.state?.sun?.isDaylight ?? true;
   const cards = teams
     .map((t) => {
       const tts = targets.filter((x) => x.teamId === t.id && x.status !== 'cancelled');
-      return `<div class="team" style="--team:${esc(t.colour)}" data-team="${t.id}">
+      return `<div class="team" style="--team:${esc(t.colour)}" data-team="${t.id}" data-drop="team:${t.id}">
         <div class="team-head">
           <span class="dot"></span>
           <input class="team-name" data-rename="${t.id}" value="${esc(t.name)}" />
@@ -159,13 +132,7 @@ function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]):
           <button class="mini" data-team-settings="${t.id}" title="Team settings: sweep width, colour, name">⚙</button>
           <button class="mini danger" data-del-team="${t.id}" title="Delete team">×</button>
         </div>
-        <div class="members">${t.members.map((m) => {
-          const fix = latest[m.userId];
-          return `<span class="chip ${m.position === 0 ? 'leader' : ''}" title="${esc(m.name)}">
-            <button class="star" data-leader="${t.id}:${m.userId}" title="Make leader">${m.position === 0 ? '★' : '☆'}</button>
-            <b>${esc(m.callsign)}</b> ${esc(m.name.split(' ')[0])}${fix ? ` <small class="${Date.now() / 1000 - fix.tst > 120 ? 'amber' : 'muted'}">${fmtAgeShort(fix.tst)}</small>` : ' <small class="amber">—</small>'}
-            <button class="x" data-remove="${t.id}:${m.userId}" title="Remove">×</button></span>`;
-        }).join('') || '<span class="muted small">No members: select responders and assign.</span>'}</div>
+        ${teamMembersHtml(t)}
         ${teamTargetLine(t, tts, targets)}
         <div class="team-foot">
           <span>Sweep width <span class="width">${t.searchWidthM} m</span></span>
@@ -174,8 +141,8 @@ function teamsTab(teams: Team[], responders: ResponderRow[], targets: Target[]):
     })
     .join('');
   void responders;
-  return `<div class="k pad-k">Teams</div>${cards || '<p class="muted small pad0 pad-x">No teams yet: tick responders above and choose + New team.</p>'}
-    <button class="btn-sm primary wide" data-action="new-team">+ New team</button>
+  return `<div class="k pad-k">Teams</div>${cards || '<p class="muted small pad0 pad-x">No teams yet: drag people onto + New team, or use Split above.</p>'}
+    <button class="btn-sm primary wide" data-action="new-team" data-drop="new">+ New team</button>
     <p class="muted small pad">New teams start at ${daylight ? '20 m (daylight)' : '10 m (after sunset)'} sweep width; change it per team with ⚙.</p>
 `;
 }
@@ -643,34 +610,17 @@ function wire(root: HTMLElement, a: SidebarActions): void {
     const p = pointById(Number(b.dataset.ptDel));
     if (p && (await confirmBox(`Remove ${POINT_KIND_LABEL[p.kind]}${p.label ? ` "${p.label}"` : ''}?`, 'Remove'))) await del(`/api/points/${p.id}`);
   }));
-  root.querySelector<HTMLSelectElement>('#assign-team')?.addEventListener('change', async (ev) => {
-    const sel = ev.target as HTMLSelectElement;
-    if (!sel.value || !incidentId) return;
-    const ids = [...cs.s.selected];
-    let teamId = Number(sel.value);
-    if (sel.value === 'new') {
-      const r = await post<{ team: Team }>(`/api/incidents/${incidentId}/teams`, {});
-      teamId = r.team.id;
-    }
-    const team = search!.teams.find((t) => t.id === teamId);
-    const existing = team?.members.map((m) => m.userId) ?? [];
-    await put(`/api/teams/${teamId}/members`, { userIds: [...new Set([...existing, ...ids])], leaderUserId: team?.leaderUserId ?? (existing.length ? undefined : ids[0]) });
-    cs.s.selected.clear();
-    cs.s.tab = 'teams';
-  });
   root.querySelector<HTMLButtonElement>('[data-action=new-team]')?.addEventListener('click', async () => { if (incidentId) await post(`/api/incidents/${incidentId}/teams`, {}); });
-  root.querySelectorAll<HTMLInputElement>('[data-rename]').forEach((i) => i.addEventListener('change', async () => { await patch(`/api/teams/${i.dataset.rename}`, { name: i.value }); }));
+  root.querySelectorAll<HTMLInputElement>('[data-rename]').forEach((i) => {
+    i.addEventListener('change', async () => { await patch(`/api/teams/${i.dataset.rename}`, { name: i.value }).catch((e) => toast(e instanceof Error ? e.message : 'failed', true)); });
+    i.addEventListener('blur', () => setTimeout(refresh));
+    i.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') i.blur(); });
+  });
   root.querySelectorAll<HTMLSelectElement>('[data-team-status]').forEach((s) => s.addEventListener('change', async () => { await patch(`/api/teams/${s.dataset.teamStatus}`, { status: s.value }); }));
   root.querySelectorAll<HTMLButtonElement>('[data-team-settings]').forEach((b) => b.addEventListener('click', () => { const t = search!.teams.find((x) => x.id === Number(b.dataset.teamSettings)); if (t) teamSettingsModal(t); }));
   root.querySelectorAll<HTMLButtonElement>('[data-fit-team]').forEach((b) => b.addEventListener('click', () => { const t = search!.teams.find((x) => x.id === Number(b.dataset.fitTeam)); if (t) a.fitTeam(t); }));
   root.querySelectorAll<HTMLButtonElement>('[data-del-team]').forEach((b) => b.addEventListener('click', async () => { if (await confirmBox('Delete this team? Members are released, targets unassigned.', 'Delete team')) await del(`/api/teams/${b.dataset.delTeam}`); }));
-  root.querySelectorAll<HTMLButtonElement>('[data-leader]').forEach((b) => b.addEventListener('click', async () => { const [teamId, userId] = b.dataset.leader!.split(':').map(Number); await patch(`/api/teams/${teamId}`, { leaderUserId: userId }); }));
-  root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
-    const [teamId, userId] = b.dataset.remove!.split(':').map(Number);
-    const team = search!.teams.find((t) => t.id === teamId)!;
-    const rest = team.members.filter((m) => m.userId !== userId).map((m) => m.userId);
-    await put(`/api/teams/${teamId}/members`, { userIds: rest, leaderUserId: team.leaderUserId === userId ? null : team.leaderUserId });
-  }));
+  if (cs.s.tab === 'teams' && root.querySelector('.team, .waiting')) wireTeamBoard(root, a.locate);
   root.querySelectorAll<HTMLButtonElement>('[data-draw]').forEach((b) => b.addEventListener('click', () => a.startDraw(b.dataset.draw as 'point' | 'area' | 'line')));
   root.querySelector<HTMLButtonElement>('[data-action=cancel-draw]')?.addEventListener('click', () => a.stopEditing());
   root.querySelector<HTMLButtonElement>('[data-action=stop-edit]')?.addEventListener('click', () => a.stopEditing());

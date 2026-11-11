@@ -87,7 +87,7 @@ async function usersSection(el: HTMLElement): Promise<void> {
         <p class="muted small">They joined from a group invite link. Approve only people you know: crew see live positions and subject details.</p></div>` : ''}
       <table class="set-table"><thead><tr><th>Name</th><th>Email</th><th>Callsign</th><th>Role</th><th>Phones</th><th>Last login</th><th>State</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>
       ${users.map((u) => `<tr class="${u.active ? '' : 'inactive'}" data-id="${u.id}">
-        <td><b>${esc(u.name)}</b>${u.id === myId ? ' <span class="muted small">(you)</span>' : ''}</td>
+        <td><b>${esc(u.name)}</b>${u.smQualified ? ' <span class="tag-sm" title="Search management qualified">SM</span>' : ''}${u.id === myId ? ' <span class="muted small">(you)</span>' : ''}</td>
         <td>${esc(u.email)}</td>
         <td>${esc(u.callsign ?? '')}</td>
         <td>${admin ? roleSelect('role', u.role, `data-role="${u.id}" ${u.id === myId ? 'disabled title="You cannot change your own role"' : ''}`) : esc(u.role)}</td>
@@ -100,7 +100,7 @@ async function usersSection(el: HTMLElement): Promise<void> {
         <table class="set-table small"><thead><tr><th>Label</th><th>Used</th><th>Approval</th><th>Expires</th><th>Made by</th><th></th></tr></thead><tbody>
         ${openInvites.map((i) => `<tr><td>${esc(i.label ?? '—')}</td><td>${i.uses} of ${i.maxUses}</td><td>${i.needsApproval ? 'needed' : 'not needed'}</td><td>${fmtDT(i.expiresAt)}</td><td>${esc(i.createdBy ?? '')}</td>
           <td class="acts"><button class="mini danger" data-act="revoke-invite" data-id="${esc(i.id)}">Withdraw</button></td></tr>`).join('')}</tbody></table>` : ''}
-      <p class="muted small">Roles: <b>member</b> responds and is tracked · <b>search manager</b> runs incidents in this console · <b>admin</b> manages users, displays and backups. Removing a user anonymises the account; their track points lose the name.</p>`;
+      <p class="muted small"><span class="tag-sm">SM</span> holds the search management qualification (set under Edit). Roles: <b>member</b> responds and is tracked · <b>search manager</b> runs incidents in this console · <b>admin</b> manages users, displays and backups. Removing a user anonymises the account; their track points lose the name.</p>`;
     if (!admin) return;
     const byId = (id: string) => all.find((u) => u.id === Number(id))!;
     el.querySelectorAll<HTMLSelectElement>('[data-role]').forEach((s) => s.addEventListener('change', () => run(async () => { await patch(`/api/users/${s.dataset.role}`, { role: s.value }); toast('Role updated'); }, load)));
@@ -199,6 +199,7 @@ function userModal(u: UserPublic | undefined, reload: () => Promise<void>): void
       <label>Email <input name="email" type="email" value="${esc(u?.email ?? '')}" required /></label>
       <label>Callsign (optional) <input name="callsign" value="${esc(u?.callsign ?? '')}" maxlength="12" /></label>
       ${u && u.id === cs.s.me?.id ? '' : `<label>Role ${roleSelect('role', u?.role ?? 'member')}</label>`}
+      <label class="chk"><input type="checkbox" name="smQualified" ${u?.smQualified ? 'checked' : ''} /> Search management qualified <span class="muted small">(shown as SM on team boards; leads teams when crew are split)</span></label>
       ${u ? '' : '<p class="muted small">A temporary password is generated and shown once. The user must change it at first login.</p>'}
       <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary">${u ? 'Save' : 'Create'}</button></div>
     </form>`);
@@ -208,10 +209,11 @@ function userModal(u: UserPublic | undefined, reload: () => Promise<void>): void
     const f = Object.fromEntries(new FormData(ev.target as HTMLFormElement)) as Record<string, string>;
     run(async () => {
       if (u) {
-        await patch(`/api/users/${u.id}`, { name: f.name, email: f.email, callsign: f.callsign || null, ...(f.role ? { role: f.role } : {}) });
+        await patch(`/api/users/${u.id}`, { name: f.name, email: f.email, callsign: f.callsign || null, smQualified: f.smQualified === 'on', ...(f.role ? { role: f.role } : {}) });
         toast('Saved');
       } else {
         const r = await post<{ user: UserPublic; tempPassword?: string }>('/api/users', f);
+        if (f.smQualified === 'on') await patch(`/api/users/${r.user.id}`, { smQualified: true });
         reveal('users', `<div class="note warn">Created <b>${esc(r.user.name)}</b>. Temporary password (shown once): <b class="mono">${esc(r.tempPassword ?? '')}</b></div>`);
       }
       closeModal();

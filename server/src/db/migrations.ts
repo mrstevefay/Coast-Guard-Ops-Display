@@ -327,4 +327,8 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE users ADD COLUMN invite_id TEXT;
   ALTER TABLE users ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;
   `,
+  // 11 — the search management qualification, shown on team boards and used to pick team leaders.
+  `
+  ALTER TABLE users ADD COLUMN sm_qualified INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

@@ -1,3 +1,4 @@
+import { splitTeams } from '../../../shared/teamsplit.js';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -18,9 +19,9 @@ import type { TrackContext, Tracking } from './tracking.js';
 
 interface IncidentRow { id: string; kind: IncidentKind; text: string; received_at: string; lat: number | null; lon: number | null; source: string | null; started_at: string; ended_at: string | null; end_reason: string | null; ipp_lat: number | null; ipp_lon: number | null; ipp_label: string | null; ipp_set_at: string | null }
 interface TeamRow { id: number; incident_id: string; name: string; colour: string; search_width_m: number; leader_user_id: number | null; status: TeamStatus; created_at: string }
-interface MemberRow { team_id: number; user_id: number; position: number; name: string }
+interface MemberRow { team_id: number; user_id: number; position: number; name: string; sm_qualified: number }
 interface TargetRow { id: number; incident_id: string; team_id: number | null; name: string; kind: TargetKind; geometry: string; notes: string | null; status: TargetStatus; priority: number; created_at: string; completed_at: string | null; segment_id: string | null; pod: number | null }
-interface ResponseRow { user_id: number; status: ResponseStatus; eta_min: number | null; note: string | null; updated_at: string; name: string; callsign: string | null }
+interface ResponseRow { user_id: number; status: ResponseStatus; eta_min: number | null; note: string | null; updated_at: string; name: string; callsign: string | null; sm_qualified: number }
 
 const RESPONSE_STATUSES: ResponseStatus[] = ['responding', 'on-scene', 'available', 'unavailable', 'stood-down'];
 const TEAM_STATUSES: TeamStatus[] = ['forming', 'tasked', 'searching', 'returned', 'stood-down'];
@@ -236,10 +237,10 @@ export class SearchService extends EventEmitter implements TrackContext {
   responders(incidentId: string): ResponderRow[] {
     const members = this.memberIndex(incidentId);
     return this.db
-      .all<ResponseRow>('SELECT r.user_id, r.status, r.eta_min, r.note, r.updated_at, u.name, u.callsign FROM responses r JOIN users u ON u.id = r.user_id WHERE r.incident_id = ? ORDER BY r.updated_at', incidentId)
+      .all<ResponseRow>('SELECT r.user_id, r.status, r.eta_min, r.note, r.updated_at, u.name, u.callsign, u.sm_qualified FROM responses r JOIN users u ON u.id = r.user_id WHERE r.incident_id = ? ORDER BY r.updated_at', incidentId)
       .map((r) => {
         const m = members.get(r.user_id);
-        return { userId: r.user_id, name: r.name, callsign: r.callsign ?? undefined, status: r.status, etaMin: r.eta_min ?? undefined, note: r.note ?? undefined, updatedAt: r.updated_at, teamId: m?.teamId, teamCallsign: m?.callsign };
+        return { userId: r.user_id, name: r.name, callsign: r.callsign ?? undefined, status: r.status, etaMin: r.eta_min ?? undefined, note: r.note ?? undefined, updatedAt: r.updated_at, teamId: m?.teamId, teamCallsign: m?.callsign, ...(r.sm_qualified ? { sm: true } : {}) };
       });
   }
 
@@ -290,7 +291,11 @@ export class SearchService extends EventEmitter implements TrackContext {
     const tr = this.teamRow(teamId);
     if (!tr) throw new Error('team not found');
     const ids = [...new Set(userIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-    for (const uid of ids) if (!this.users.byId(uid)) throw new Error(`user ${uid} not found`);
+    for (const uid of ids) {
+      const u = this.users.byId(uid);
+      if (!u) throw new Error(`user ${uid} not found`);
+      if (u.active !== 1) throw new Error(`${u.name} does not have an active account`);
+    }
     const leader = leaderUserId === undefined ? (tr.leader_user_id && ids.includes(tr.leader_user_id) ? tr.leader_user_id : null) : leaderUserId;
     if (leader && !ids.includes(leader)) throw new Error('leader must be a member');
     const t = now();
@@ -299,7 +304,8 @@ export class SearchService extends EventEmitter implements TrackContext {
       const curMap = new Map(current.map((c) => [c.user_id, c.position]));
       // leave this team
       for (const c of current) if (!ids.includes(c.user_id)) this.db.run('UPDATE team_members SET left_at = ? WHERE team_id = ? AND user_id = ?', t, teamId, c.user_id);
-      // leave other teams in this incident
+      // leave other teams in this incident; a team whose leader moved away has no leader until one is chosen
+      for (const uid of ids) this.db.run('UPDATE teams SET leader_user_id = NULL, updated_at = ? WHERE incident_id = ? AND id <> ? AND leader_user_id = ?', t, tr.incident_id, teamId, uid);
       for (const uid of ids) this.db.run('UPDATE team_members SET left_at = ? WHERE user_id = ? AND team_id <> ? AND left_at IS NULL AND team_id IN (SELECT id FROM teams WHERE incident_id = ?)', t, uid, teamId, tr.incident_id);
       // assign numbers: leader 0, existing keep theirs (unless they were 0 and are no longer leader), new get next free
       const used = new Set<number>();
@@ -335,6 +341,45 @@ export class SearchService extends EventEmitter implements TrackContext {
     return this.team(teamId)!;
   }
 
+  /**
+   * Add people to a team without touching who is already in it (they leave any other team).
+   * A team with nobody in it gets a leader: a search-management-qualified person if one is being added.
+   */
+  addMembers(teamId: number, userIds: number[]): Team {
+    const team = this.team(teamId);
+    if (!team) throw new Error('team not found');
+    const existing = team.members.map((m) => m.userId);
+    const fresh = [...new Set(userIds.map(Number))].filter((id) => !existing.includes(id));
+    if (!fresh.length) return team;
+    const leader = existing.length ? undefined : fresh.find((id) => this.users.byId(id)?.sm_qualified === 1) ?? fresh[0];
+    return this.setMembers(teamId, [...existing, ...fresh], leader);
+  }
+
+  /** Take one person out of a team; if they led it, it has no leader until one is chosen. */
+  removeMember(teamId: number, userId: number): Team {
+    const team = this.team(teamId);
+    if (!team) throw new Error('team not found');
+    if (!team.members.some((m) => m.userId === userId)) return team;
+    return this.setMembers(teamId, team.members.filter((m) => m.userId !== userId).map((m) => m.userId), team.leaderUserId === userId ? null : undefined);
+  }
+
+  /**
+   * Split crew into teams of about `size`: the given users, or everyone responding or on scene who
+   * is not in a team. Search-management-qualified crew lead. Empty teams are filled before new ones are made.
+   */
+  splitIntoTeams(incidentId: string, size: number, userIds?: number[]): Team[] {
+    this.requireOpen(incidentId);
+    if (!(size >= 1 && size <= 12)) throw new Error('team size must be 1 to 12');
+    const inTeam = this.memberIndex(incidentId);
+    const waiting = this.responders(incidentId).filter((r) => !inTeam.has(r.userId));
+    const wanted = userIds?.length ? new Set(userIds.map(Number)) : undefined;
+    const pool = wanted ? [...wanted].filter((id) => !inTeam.has(id)).map((id) => ({ userId: id, sm: this.users.byId(id)?.sm_qualified === 1 })) : waiting.filter((r) => r.status === 'responding' || r.status === 'on-scene').map((r) => ({ userId: r.userId, sm: r.sm }));
+    if (!pool.length) throw new Error('nobody is waiting for a team');
+    const plan = splitTeams(pool, size);
+    const empty = this.teams(incidentId).filter((t) => !t.members.length && t.status === 'forming');
+    return plan.map((p) => this.setMembers((empty.shift() ?? this.createTeam(incidentId)).id, p.userIds, p.leaderUserId));
+  }
+
   private setLeader(teamId: number, leaderUserId: number | null): void {
     const members = this.db.all<{ user_id: number }>('SELECT user_id FROM team_members WHERE team_id = ? AND left_at IS NULL ORDER BY position', teamId).map((m) => m.user_id);
     this.setMembers(teamId, members, leaderUserId);
@@ -343,7 +388,7 @@ export class SearchService extends EventEmitter implements TrackContext {
   teams(incidentId: string): Team[] {
     const rows = this.db.all<TeamRow>('SELECT * FROM teams WHERE incident_id = ? ORDER BY created_at', incidentId);
     const members = this.db.all<MemberRow>(
-      'SELECT tm.team_id, tm.user_id, tm.position, u.name FROM team_members tm JOIN teams t ON t.id = tm.team_id JOIN users u ON u.id = tm.user_id WHERE t.incident_id = ? AND tm.left_at IS NULL ORDER BY tm.position',
+      'SELECT tm.team_id, tm.user_id, tm.position, u.name, u.sm_qualified FROM team_members tm JOIN teams t ON t.id = tm.team_id JOIN users u ON u.id = tm.user_id WHERE t.incident_id = ? AND tm.left_at IS NULL ORDER BY tm.position',
       incidentId,
     );
     return rows.map((r) => ({
@@ -355,7 +400,7 @@ export class SearchService extends EventEmitter implements TrackContext {
       status: r.status,
       leaderUserId: r.leader_user_id ?? undefined,
       createdAt: r.created_at,
-      members: members.filter((m) => m.team_id === r.id).map((m): TeamMember => ({ userId: m.user_id, name: m.name, position: m.position, callsign: `${r.name}-${m.position}` })),
+      members: members.filter((m) => m.team_id === r.id).map((m): TeamMember => ({ userId: m.user_id, name: m.name, position: m.position, callsign: `${r.name}-${m.position}`, ...(m.sm_qualified ? { sm: true } : {}) })),
     }));
   }
 

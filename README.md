@@ -132,7 +132,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 `GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
 `PUT /api/incidents/:id/response`; `POST /api/incidents/:id/teams`, `PATCH|DELETE /api/teams/:id`,
-`PUT /api/teams/:id/members`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
+`PUT /api/teams/:id/members` (replace), `POST /api/teams/:id/members` (add), `DELETE /api/teams/:id/members/:userId`, `POST /api/incidents/:id/teams/split`; `POST /api/incidents/:id/targets`, `PATCH|DELETE /api/targets/:id`;
 `POST /api/targets/:id/progress` (a member of the target's team starts or finishes it), `POST /api/incidents/:id/finds` (crew report a find: subject, sighting, item or clue, at their phone's position or last fix; kept off display keys); `GET /api/places?q=` (place search, manager);
 `GET /api/targets/:id/coverage` (track coverage and suggested POD, member); `GET|PUT /api/incidents/:id/outcome`, `GET /api/outcomes.csv` (outcome record and anonymised export, manager); targets take `segmentId` and `pod`;
 `GET|POST /api/contacts`, `PATCH|DELETE /api/contacts/:id` (station directory, manager); `GET|POST /api/incidents/:id/contacts`, `PATCH|DELETE /api/incident-contacts/:id`, `POST /api/incidents/:id/contact-log` (incident contacts and call log, manager only, every read audited, never in the snapshot);
@@ -317,6 +317,16 @@ distribution.
 The console sidebar follows the search in three stages. **1 Subject** holds the points (last known position, place last seen, home, vehicle, significant places) and who the subject is. **2 Plan** shows the distance rings, live warnings, the first tasks and the most likely segments, with every statistic folded into Evidence and sources. **3 Teams** is one board: responders waiting for a team, a card per team with its current target and one next-step button, and every target below. Opening a stage switches the map's layers to suit (Plan, Teams, Clean). The draw tools sit on the map; clicking a segment or target on the map opens a card to assign it, and hovering a row outlines its shape.
 
 On the crew phone the Status page shows the next thing to do: respond, then the target once the team has one, with **Start search**, **Area searched** and **Report a find**. Team status follows on the console. A find arrives on the console as an alert with Show, and appears on every crew map, never on the TV. The crew app has five tabs: Status, Map (full screen, opening on the member's target, with Navigate), Team, Conditions (weather, tide, sea and the sea area forecast) and More.
+
+**Organising teams.** On the Teams tab, people are put in teams three ways, so it works with a mouse and on a tablet:
+
+- **Drag** a person from Waiting onto a team, onto **+ New team**, or from one team to another; drag a member back to Waiting to take them out. Tick several people and drag one to move them all.
+- **Tick, then tap:** tick people in Waiting and each team shows **+ Add here**.
+- **Tap a member** for a menu: Make leader, Move to another team, Show on the map, Remove.
+
+**+ Add crew** on a team finds anyone on the roster by name or callsign, including crew who are at the station without the app; they count as responding. **Split** deals the waiting crew (or the ticked ones) into teams of two to six, sizes within one of each other, filling empty teams before making new ones. A team whose leader is moved away shows "No leader" until one is chosen.
+
+Crew who hold the **search management qualification** (a tick box under Settings → Users → Edit) carry an **SM** tag on the board. Split gives each team an SM-qualified leader while there are enough, and an empty team's first leader is the SM-qualified person among those added. The qualification is separate from the search manager role, which controls who can open this console.
 
 **Contacts.** The console's **Contacts** button opens the incident's contacts: Gardaí, MRCC, ambulance, other units, next of kin and the reporting person. Standing contacts live under Settings → Station contacts and are added in one click, then you type who answered and their reference, such as a PULSE number. The call log records who rang whom and what was said, and goes into the timeline and the report. Contacts are for managers only. They never reach crew phones or the TV, and every read is audited. Next of kin and reporting-person details are cleared `retention.privateContactDays` after the incident closes (default 30). The report prints them by name only.
 

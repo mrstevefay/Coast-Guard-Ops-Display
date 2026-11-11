@@ -17,6 +17,7 @@ export interface UserRow {
   updated_at: string;
   invite_id?: string | null;
   pending?: number;
+  sm_qualified?: number;
 }
 
 export const ROLE_RANK: Record<Role, number> = { member: 1, manager: 2, admin: 3 };
@@ -34,6 +35,7 @@ export function toPublic(u: UserRow, extra: Partial<UserPublic> = {}): UserPubli
     privacyAcceptedAt: u.privacy_accepted_at ?? undefined,
     lastLoginAt: u.last_login_at ?? undefined,
     ...(u.pending ? { pending: true } : {}),
+    ...(u.sm_qualified ? { smQualified: true } : {}),
     ...extra,
   };
 }
@@ -85,7 +87,7 @@ export class Users {
     return { user: this.byId(r.lastInsertRowid)!, tempPassword: generated };
   }
 
-  update(id: number, patch: { name?: string; callsign?: string | null; role?: Role; active?: boolean; email?: string }): UserRow {
+  update(id: number, patch: { name?: string; callsign?: string | null; role?: Role; active?: boolean; email?: string; smQualified?: boolean }): UserRow {
     const u = this.byId(id);
     if (!u) throw new Error('user not found');
     const email = patch.email !== undefined ? patch.email.trim().toLowerCase() : u.email;
@@ -94,12 +96,13 @@ export class Users {
     if (other && other.id !== id) throw new Error('email already in use');
     if (patch.role && !['admin', 'manager', 'member'].includes(patch.role)) throw new Error('invalid role');
     this.db.run(
-      'UPDATE users SET name = ?, callsign = ?, role = ?, active = ?, email = ?, updated_at = ? WHERE id = ?',
+      'UPDATE users SET name = ?, callsign = ?, role = ?, active = ?, email = ?, sm_qualified = ?, updated_at = ? WHERE id = ?',
       patch.name?.trim() || u.name,
       patch.callsign === undefined ? u.callsign : patch.callsign?.trim() || null,
       patch.role ?? u.role,
       patch.active === undefined ? u.active : patch.active ? 1 : 0,
       email,
+      patch.smQualified === undefined ? u.sm_qualified ?? 0 : patch.smQualified ? 1 : 0,
       now(),
       id,
     );
