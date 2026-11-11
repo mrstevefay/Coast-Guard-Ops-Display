@@ -6,6 +6,7 @@ import { fmtDurationMin, fmtElapsed } from '../format';
 import { WsClient } from '../ws';
 import { renderAdmin } from './pages/admin';
 import { renderConditions } from './pages/feeds';
+import { renderJoin } from './pages/join';
 import { renderLogin } from './pages/login';
 import { leaveMapPage, renderMapPage } from './pages/map';
 import { renderDevicePage, renderMore, renderPassword, renderPrivacy } from './pages/profile';
@@ -29,6 +30,15 @@ const TABS: [Route, string][] = [
 ];
 
 async function boot(): Promise<void> {
+  // an invite link: the join form comes first, signed in or not
+  const join = /^#\/join\/([\w-]+)/.exec(location.hash);
+  if (join) {
+    return renderJoin(app, join[1], (user) => {
+      setUnauthorisedHandler(() => showLogin());
+      store.setMe(user, { kind: 'user', userId: user.id, role: user.role, name: user.name });
+      start();
+    });
+  }
   setUnauthorisedHandler(() => showLogin());
   try {
     const me = await get<{ principal: Principal; user?: UserPublic }>('/api/auth/me');

@@ -308,4 +308,23 @@ export const MIGRATIONS: string[] = [
     recorded_by INTEGER
   );
   `,
+  // 10 — crew invite links. An admin makes a link (one person, or a group with a use limit); the
+  // database keeps only the token's hash. Accounts made from a group link wait for approval
+  // (pending, inactive) so a forwarded link cannot let a stranger see crew positions.
+  `
+  CREATE TABLE invites (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    label TEXT,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    uses INTEGER NOT NULL DEFAULT 0,
+    needs_approval INTEGER NOT NULL DEFAULT 1,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE users ADD COLUMN invite_id TEXT;
+  ALTER TABLE users ADD COLUMN pending INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

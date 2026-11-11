@@ -1,11 +1,14 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import QRCode from 'qrcode';
 import type { Role } from '../../../shared/types.js';
 import type { Audit } from '../audit.js';
 import { cookieOptions, requireAuth, SESSION_COOKIE, type AuthCtx } from './middleware.js';
+import { InviteError, type Invites } from './invites.js';
 import { toPublic } from './users.js';
 
 export interface AuthRoutesDeps extends AuthCtx {
   audit: Audit;
+  invites: Invites;
 }
 
 /** Per-email login throttle (20/hour) on top of the per-IP rate limit. */
@@ -21,7 +24,7 @@ function emailThrottled(email: string): boolean {
 }
 
 export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promise<void> {
-  const { cfg, sessions, users, audit } = d;
+  const { cfg, sessions, users, audit, invites } = d;
   const cookieMaxAge = cfg.auth.sessionDays * 86400;
   const errorJson = (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) });
 
@@ -34,6 +37,9 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
       if (!email || !password) return reply.code(400).send({ error: 'email and password required' });
       if (emailThrottled(email)) return reply.code(429).send({ error: 'too many attempts, try later' });
       const user = users.authenticate(email, password);
+      if (!user && users.pendingMatch(email, password)) {
+        return reply.code(403).send({ error: 'Your account is waiting for the station officer to approve it.' });
+      }
       if (!user) {
         audit.log(undefined, req.ip, 'auth.login.failed', undefined, { email });
         return reply.code(401).send({ error: 'invalid email or password' });
@@ -92,7 +98,8 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
   // ---------------------------------------------------------------- users
   app.get('/api/users', { preHandler: requireAuth(d, 'manager') }, async () => {
     const counts = users.deviceCounts();
-    return { users: users.list().map((u) => toPublic(u, { deviceCount: counts.get(u.id) ?? 0 })) };
+    const via = invites.labelsByUser();
+    return { users: users.list().map((u) => toPublic(u, { deviceCount: counts.get(u.id) ?? 0, invitedVia: via.get(u.id) })) };
   });
 
   app.post<{ Body: { name?: string; email?: string; callsign?: string; role?: Role; password?: string } }>('/api/users', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
@@ -131,6 +138,26 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
     },
   );
 
+  app.post<{ Params: { id: string } }>('/api/users/:id/approve', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
+    try {
+      const user = users.approve(Number(req.params.id));
+      audit.log(req.principal, req.ip, 'user.approved', { type: 'user', id: user.id });
+      return { user: toPublic(user) };
+    } catch (e) {
+      return reply.code(400).send(errorJson(e));
+    }
+  });
+
+  app.post<{ Params: { id: string } }>('/api/users/:id/reject', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
+    try {
+      users.reject(Number(req.params.id));
+      audit.log(req.principal, req.ip, 'user.rejected', { type: 'user', id: Number(req.params.id) });
+      return { ok: true };
+    } catch (e) {
+      return reply.code(400).send(errorJson(e));
+    }
+  });
+
   app.post<{ Params: { id: string } }>('/api/users/:id/reset-password', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!users.byId(id)) return reply.code(404).send({ error: 'user not found' });
@@ -149,6 +176,66 @@ export async function authRoutes(app: FastifyInstance, d: AuthRoutesDeps): Promi
     audit.log(me, req.ip, 'user.anonymised', { type: 'user', id });
     return { ok: true };
   });
+
+  // ---------------------------------------------------------------- invite links
+  const publicUrl = (req: FastifyRequest) => cfg.auth.publicUrl || `${req.protocol}://${req.headers.host}`;
+
+  app.get('/api/invites', { preHandler: requireAuth(d, 'admin') }, async () => ({ invites: invites.list() }));
+
+  app.post<{ Body: { label?: string; maxUses?: number; days?: number; needsApproval?: boolean } }>('/api/invites', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
+    try {
+      const me = req.principal;
+      const { invite, token } = invites.create(req.body ?? {}, me?.kind === 'user' ? me.userId : undefined);
+      // the token goes in the fragment: it stays in the browser and never reaches a server log
+      const url = `${publicUrl(req)}/m/#/join/${token}`;
+      const qrSvg = await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, width: 280 });
+      audit.log(me, req.ip, 'invite.created', { type: 'invite', id: invite.id }, { label: invite.label, maxUses: invite.maxUses, needsApproval: invite.needsApproval, expiresAt: invite.expiresAt });
+      return { invite, url, qrSvg };
+    } catch (e) {
+      return reply.code(400).send(errorJson(e));
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/invites/:id', { preHandler: requireAuth(d, 'admin') }, async (req, reply) => {
+    if (!invites.revoke(req.params.id)) return reply.code(404).send({ error: 'not found' });
+    audit.log(req.principal, req.ip, 'invite.revoked', { type: 'invite', id: req.params.id });
+    return { ok: true };
+  });
+
+  /** Public: is this link usable? What the join page shows before the form. */
+  app.get<{ Params: { token: string } }>('/api/join/:token', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+    try {
+      const inv = invites.check(req.params.token);
+      return { station: cfg.station.name, needsApproval: inv.needsApproval, expiresAt: inv.expiresAt };
+    } catch (e) {
+      const ie = e instanceof InviteError ? e : new InviteError('invite check failed', 500);
+      return reply.code(ie.status).send({ error: ie.message });
+    }
+  });
+
+  /** Public: make an account from an invite link. Signs in straight away unless approval is needed. */
+  app.post<{ Params: { token: string }; Body: { name?: string; email?: string; callsign?: string; password?: string } }>(
+    '/api/join/:token',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      try {
+        const { user, pending } = invites.accept(req.params.token, {
+          name: String(req.body?.name ?? ''),
+          email: String(req.body?.email ?? ''),
+          callsign: req.body?.callsign ? String(req.body.callsign) : undefined,
+          password: String(req.body?.password ?? ''),
+        });
+        audit.log(undefined, req.ip, 'invite.accepted', { type: 'user', id: user.id }, { invite: user.invite_id, pending });
+        if (pending) return { pending: true };
+        const token = sessions.create(user, { userAgent: req.headers['user-agent'], ip: req.ip });
+        reply.setCookie(SESSION_COOKIE, token, cookieOptions(cfg, cookieMaxAge));
+        return { user: toPublic(user) };
+      } catch (e) {
+        const ie = e instanceof InviteError ? e : new InviteError('could not create the account', 500);
+        return reply.code(ie.status).send({ error: ie.message });
+      }
+    },
+  );
 
   // ---------------------------------------------------------------- admin
   app.get('/api/admin/display-keys', { preHandler: requireAuth(d, 'admin') }, async () => ({ keys: sessions.listDisplayKeys() }));

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Crew invite links.** Settings → Users → **Invite crew** makes a link and QR code instead of a temporary password.
+  - **One person:** the link works once and signs them in with a password they chose.
+  - **Group:** for a crew night or the crew WhatsApp group, up to 100 uses. Accounts wait for an admin to **Approve** or **Turn down** them, and until then sign-in says the account is waiting.
+  - Links expire after 1, 7 or 30 days and can be withdrawn. The token travels only in the URL fragment, and the database keeps its hash. Every step is audited.
+  - Routes: `GET|POST|DELETE /api/invites`, `GET|POST /api/join/:token` (public, rate-limited), `POST /api/users/:id/approve|reject`. Migration 10.
 - **Map labels no longer pile up.** On the console, crew map and TV, labels are placed in order of importance: last known position and incident first, then PLS and finds, team callsigns, the station, other points, targets, behaviour rings, segments and range rings. Each label tries below, above, right and left of its point, keeps clear of other points' dots, prefers spots that stay on screen, and hides when there is no room. Its dot stays, and the label returns on zoom in. The LKP and station always show. Crew of one team whose labels would overlap share one label ("Alpha ×3") centred on them, which splits again on zoom in. `shared/declutter.ts`.
 - **Probability updates as areas are searched, and outcome recording.**
   - **POD:** marking an area searched, on the console or the crew phone, asks how thorough it was (Quick look 30 %, Normal 50 %, Thorough 70 %, Very thorough 90 %). Where the team's tracks cover the area, it also shows the POD they suggest (`GET /api/targets/:id/coverage`). Targets keep the segment they came from (`segmentId`) and their POD.

@@ -127,7 +127,7 @@ session. With no token configured and accounts off, the mutating endpoints retur
 
 **Phase 2 routes** (accounts on, `AUTH_OPEN=false`): `POST /api/auth/login|logout|password|privacy-accept|display`,
 `GET /api/incidents` (history), `GET /api/incidents/:id/replay`, `GET /api/incidents/:id/report[.html]` (manager);
-`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…` (admin); `GET|POST|DELETE /api/admin/display-keys`,
+`GET /api/auth/me`; `GET|POST|PATCH|DELETE /api/users…`, `POST /api/users/:id/approve|reject`, `GET|POST|DELETE /api/invites` (admin); `GET|POST /api/join/:token` (public, rate-limited); `GET|POST|DELETE /api/admin/display-keys`,
 `GET /api/admin/audit`, `GET /api/admin/backups`, `POST /api/admin/backup|retention`;
 `GET|POST|DELETE /api/devices…`, `POST /api/devices/link` (one-tap setup for this phone), `GET /api/devices/:id/link|qr.svg|config.otrc`; `POST /ot` (OwnTracks, Basic auth);
 `GET /api/search`; `POST /api/incidents`, `POST /api/incidents/:id/close`, `GET /api/incidents/:id/tracks|export.geojson`,
@@ -323,6 +323,16 @@ On the crew phone the Status page shows the next thing to do: respond, then the 
 **Searching updates the plan.** When an area is marked searched, on the console or with **Area searched** on a crew phone, the team says how thorough it was: Quick look 30 %, Normal 50 %, Thorough 70 % or Very thorough 90 %. Where the team's tracks cover the area, the box also shows the probability of detection (POD) they suggest: coverage = metres walked × twice the sweep width ÷ area, and POD = 1 − e^−coverage. The Plan tab then moves probability out of the searched segment and into the others and the unsegmented rest, using Bayes (`shared/searchtheory.ts`). It re-ranks the list and shows the old and new figures. Repeat searches of one segment combine.
 
 **Outcomes.** Closing a tasking asks how it ended: found well, injured or deceased, located elsewhere, or not found. If found, it also asks where (in the same terms as the find-location statistics), by whom and when. The position defaults to a crew "Subject found" report. The distance from the planning point is worked out on save, and the outcome can be skipped and recorded or corrected later from History. **History → Outcomes (CSV)** exports the record for the Irish evidence base: month, category, sex, age band, terrain, outcome, distance, where found, who found them and the hours taken. It has no names, positions or notes.
+
+## Adding crew
+
+**Settings → Users → Invite crew** makes a link and a QR code; there is no temporary password to pass on.
+
+- **One person:** the link works once. They open it on their phone, type their name, callsign, email and a password of their own, and are signed in. The privacy notice and the OwnTracks setup follow as usual.
+- **Group** (a crew night, or the crew WhatsApp group): up to 100 people, and by default each account waits under **Waiting for approval** until an admin approves it or turns it down. Until then, signing in says the account is waiting. Approve only people you know: crew see live positions and subject details.
+- Links expire after 1, 7 or 30 days and can be withdrawn. The token is only in the link's `#` fragment, so it never reaches server logs, and the database keeps only its hash. The link is shown once, when it is made.
+
+**+ Add user** still creates an account with a temporary password, for anyone without a phone to hand.
 
 ## Placing points and positions
 

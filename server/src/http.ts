@@ -12,6 +12,7 @@ import { backupDb, listBackups } from './backup.js';
 import { runRetention } from './search/retention.js';
 import { requireAuth, resolvePrincipal, type AuthCtx } from './auth/middleware.js';
 import { timingSafeEqualStr } from './auth/password.js';
+import { Invites } from './auth/invites.js';
 import { authRoutes } from './auth/routes.js';
 import type { Sessions } from './auth/sessions.js';
 import type { Users } from './auth/users.js';
@@ -195,7 +196,7 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
 
   // ---- accounts + tracking (only when auth is on; in open mode nobody has an identity) ----
   if (!cfg.auth.open) {
-    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit }));
+    await app.register(async (sub) => authRoutes(sub, { ...auth, audit: deps.audit, invites: new Invites(deps.db, deps.users) }));
     if (cfg.search.enabled) {
       await app.register(async (sub) =>
         owntracksRoutes(sub, {

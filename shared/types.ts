@@ -307,6 +307,24 @@ export interface UserPublic {
   privacyAcceptedAt?: string;
   lastLoginAt?: string;
   deviceCount?: number;
+  /** Joined from a group invite and waiting for an admin to approve. */
+  pending?: boolean;
+  /** The invite's label, when the account was made from an invite link. */
+  invitedVia?: string;
+}
+
+export interface InvitePublic {
+  id: string;
+  label?: string;
+  maxUses: number;
+  uses: number;
+  needsApproval: boolean;
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  createdBy?: string;
+  /** usable now: not revoked, not expired, uses left */
+  open: boolean;
 }
 
 export interface DevicePublic {

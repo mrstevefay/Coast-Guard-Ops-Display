@@ -15,6 +15,8 @@ export interface UserRow {
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
+  invite_id?: string | null;
+  pending?: number;
 }
 
 export const ROLE_RANK: Record<Role, number> = { member: 1, manager: 2, admin: 3 };
@@ -31,6 +33,7 @@ export function toPublic(u: UserRow, extra: Partial<UserPublic> = {}): UserPubli
     mustChangePassword: u.must_change_password === 1,
     privacyAcceptedAt: u.privacy_accepted_at ?? undefined,
     lastLoginAt: u.last_login_at ?? undefined,
+    ...(u.pending ? { pending: true } : {}),
     ...extra,
   };
 }
@@ -114,6 +117,27 @@ export class Users {
     if (!verifyPassword(password, u.password_hash)) return undefined;
     this.db.run('UPDATE users SET last_login_at = ? WHERE id = ?', now(), u.id);
     return u;
+  }
+
+  /** Right password for an account still waiting for approval (so login can say so, not "wrong password"). */
+  pendingMatch(email: string, password: string): boolean {
+    const u = this.byEmail(email);
+    return Boolean(u && u.pending === 1 && verifyPassword(password, u.password_hash));
+  }
+
+  /** Approve an account made from a group invite. */
+  approve(id: number): UserRow {
+    const u = this.byId(id);
+    if (!u || u.pending !== 1) throw new Error('no account waiting for approval');
+    this.db.run('UPDATE users SET pending = 0, active = 1, updated_at = ? WHERE id = ?', now(), id);
+    return this.byId(id)!;
+  }
+
+  /** Turn down an account waiting for approval: it never signed in, so it is deleted outright. */
+  reject(id: number): void {
+    const u = this.byId(id);
+    if (!u || u.pending !== 1) throw new Error('no account waiting for approval');
+    this.db.run('DELETE FROM users WHERE id = ?', id);
   }
 
   setPassword(id: number, password: string, mustChange = false): void {

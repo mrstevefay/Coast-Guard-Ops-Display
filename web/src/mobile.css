@@ -220,3 +220,5 @@ body.map-full #page { padding: 0; max-width: none; gap: 0; }
 .pod-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pod-grid .btn { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; }
 .pod-grid small { font-weight: 500; opacity: 0.85; }
+
+.join-form .note.small { font-size: 12px; margin: -4px 0 0; }

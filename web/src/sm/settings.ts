@@ -3,7 +3,7 @@
  * Everything the crew app offers under More → Admin, plus the admin-only API
  * (backups, retention, audit log) that had no UI, laid out for a laptop.
  */
-import { CONTACT_ROLES, CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type DevicePublic, type ProviderHealth, type Role, type StationContact, type TerrainStatus, type UserPublic } from '../../../shared/types';
+import { CONTACT_ROLES, CONTACT_ROLE_LABEL, PRIVATE_CONTACT_ROLES, type DevicePublic, type InvitePublic, type ProviderHealth, type Role, type StationContact, type TerrainStatus, type UserPublic } from '../../../shared/types';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { esc } from '../format';
 import { toast } from '../m/ui';
@@ -75,8 +75,16 @@ async function usersSection(el: HTMLElement): Promise<void> {
   const admin = cs.isAdmin;
   const myId = cs.s.me?.id;
   const load = async () => {
-    const { users } = await get<{ users: UserPublic[] }>('/api/users');
-    el.innerHTML = `<div class="set-head"><h2>Users <span class="muted">· ${users.length}</span></h2>${admin ? '<button class="btn-sm primary" data-act="add">+ Add user</button>' : '<span class="muted small">Read-only: admins manage accounts.</span>'}</div>
+    const all = (await get<{ users: UserPublic[] }>('/api/users')).users;
+    const waiting = all.filter((u) => u.pending);
+    const users = all.filter((u) => !u.pending);
+    const invites = admin ? (await get<{ invites: InvitePublic[] }>('/api/invites')).invites : [];
+    const openInvites = invites.filter((i) => i.open);
+    el.innerHTML = `<div class="set-head"><h2>Users <span class="muted">· ${users.length}</span></h2>${admin ? '<button class="btn-sm primary" data-act="invite">Invite crew</button><button class="btn-sm" data-act="add">+ Add user</button>' : '<span class="muted small">Read-only: admins manage accounts.</span>'}</div>
+      ${waiting.length ? `<div class="set-waiting"><h3>Waiting for approval · ${waiting.length}</h3>
+        <table class="set-table"><tbody>${waiting.map((u) => `<tr><td><b>${esc(u.name)}</b>${u.callsign ? ` <span class="muted">${esc(u.callsign)}</span>` : ''}</td><td>${esc(u.email)}</td><td class="muted small">via ${esc(u.invitedVia ?? 'invite link')}</td>
+          ${admin ? `<td class="acts"><button class="mini primary" data-act="approve" data-id="${u.id}">Approve</button><button class="mini danger" data-act="reject" data-id="${u.id}">Turn down</button></td>` : ''}</tr>`).join('')}</tbody></table>
+        <p class="muted small">They joined from a group invite link. Approve only people you know: crew see live positions and subject details.</p></div>` : ''}
       <table class="set-table"><thead><tr><th>Name</th><th>Email</th><th>Callsign</th><th>Role</th><th>Phones</th><th>Last login</th><th>State</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>
       ${users.map((u) => `<tr class="${u.active ? '' : 'inactive'}" data-id="${u.id}">
         <td><b>${esc(u.name)}</b>${u.id === myId ? ' <span class="muted small">(you)</span>' : ''}</td>
@@ -88,11 +96,22 @@ async function usersSection(el: HTMLElement): Promise<void> {
         <td>${u.active ? badge('active', 'green') : badge('inactive', 'grey')}${u.mustChangePassword ? ' ' + badge('temp pw', 'amber') : ''}${!u.privacyAcceptedAt && u.active ? ' ' + badge('privacy pending', 'grey') : ''}</td>
         ${admin ? `<td class="acts"><button class="mini" data-act="edit" data-id="${u.id}">Edit</button><button class="mini" data-act="reset" data-id="${u.id}">Reset pw</button>${u.id === myId ? '' : `<button class="mini" data-act="toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? 'Deactivate' : 'Activate'}</button><button class="mini danger" data-act="remove" data-id="${u.id}">Remove</button>`}</td>` : ''}
       </tr>`).join('')}</tbody></table>
+      ${openInvites.length ? `<h3 class="set-sub">Open invite links · ${openInvites.length}</h3>
+        <table class="set-table small"><thead><tr><th>Label</th><th>Used</th><th>Approval</th><th>Expires</th><th>Made by</th><th></th></tr></thead><tbody>
+        ${openInvites.map((i) => `<tr><td>${esc(i.label ?? '—')}</td><td>${i.uses} of ${i.maxUses}</td><td>${i.needsApproval ? 'needed' : 'not needed'}</td><td>${fmtDT(i.expiresAt)}</td><td>${esc(i.createdBy ?? '')}</td>
+          <td class="acts"><button class="mini danger" data-act="revoke-invite" data-id="${esc(i.id)}">Withdraw</button></td></tr>`).join('')}</tbody></table>` : ''}
       <p class="muted small">Roles: <b>member</b> responds and is tracked · <b>search manager</b> runs incidents in this console · <b>admin</b> manages users, displays and backups. Removing a user anonymises the account; their track points lose the name.</p>`;
     if (!admin) return;
-    const byId = (id: string) => users.find((u) => u.id === Number(id))!;
+    const byId = (id: string) => all.find((u) => u.id === Number(id))!;
     el.querySelectorAll<HTMLSelectElement>('[data-role]').forEach((s) => s.addEventListener('change', () => run(async () => { await patch(`/api/users/${s.dataset.role}`, { role: s.value }); toast('Role updated'); }, load)));
     wire(el, {
+      invite: () => inviteModal(load),
+      approve: (b) => run(async () => { await post(`/api/users/${b.dataset.id}/approve`); toast(`${byId(b.dataset.id!).name} approved`); }, load),
+      reject: (b) => {
+        const u = byId(b.dataset.id!);
+        confirmModal(`Turn down ${esc(u.name)}?`, 'The account is deleted. They can be invited again later.', 'Turn down', async () => { await post(`/api/users/${u.id}/reject`); await load(); }, true);
+      },
+      'revoke-invite': (b) => confirmModal('Withdraw this invite link?', 'Anyone who opens it afterwards is told to ask for a new one. Accounts already made stay.', 'Withdraw', async () => { await del(`/api/invites/${b.dataset.id}`); await load(); }, true),
       add: () => userModal(undefined, load),
       edit: (b) => userModal(byId(b.dataset.id!), load),
       reset: (b) => {
@@ -111,6 +130,66 @@ async function usersSection(el: HTMLElement): Promise<void> {
     });
   };
   await load();
+}
+
+/** Make an invite link: for one person (signs straight in) or a group (accounts wait for approval). */
+function inviteModal(reload: () => Promise<void>): void {
+  const root = modal(`<h3>Invite crew</h3>
+    <form id="inv">
+      <div class="oc-opts">
+        <label class="opt"><input type="radio" name="kind" value="one" checked /><span>One person</span></label>
+        <label class="opt"><input type="radio" name="kind" value="group" /><span>Group (e.g. crew night)</span></label>
+      </div>
+      <label>Label <input name="label" maxlength="80" placeholder="Who it is for, e.g. Aoife Kelly" /></label>
+      <div class="oc-line" id="inv-group" hidden><label>Up to <input name="maxUses" type="number" min="2" max="100" value="10" /> people</label>
+        <label class="chk"><input type="checkbox" name="needsApproval" checked /> I approve each account</label></div>
+      <label>Expires after <select name="days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select></label>
+      <p class="muted small" id="inv-help">They open the link on their phone, choose their own password and are signed in. The link works once.</p>
+      <div class="modal-actions"><button type="button" class="btn-sm" id="cancel">Cancel</button><button type="submit" class="btn-sm primary">Make link</button></div>
+    </form>`);
+  const form = root.querySelector<HTMLFormElement>('#inv')!;
+  const group = root.querySelector<HTMLElement>('#inv-group')!;
+  const help = root.querySelector<HTMLElement>('#inv-help')!;
+  const sync = () => {
+    const isGroup = new FormData(form).get('kind') === 'group';
+    group.hidden = !isGroup;
+    (form.elements.namedItem('label') as HTMLInputElement).placeholder = isGroup ? 'e.g. Crew night November' : 'Who it is for, e.g. Aoife Kelly';
+    help.textContent = isGroup
+      ? 'Anyone with the link can make an account until it runs out or expires. With approval on, accounts wait for you under Users before they can sign in.'
+      : 'They open the link on their phone, choose their own password and are signed in. The link works once.';
+  };
+  form.addEventListener('change', sync);
+  root.querySelector('#cancel')!.addEventListener('click', closeModal);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const f = new FormData(form);
+    const isGroup = f.get('kind') === 'group';
+    run(async () => {
+      const r = await post<{ invite: InvitePublic; url: string; qrSvg: string }>('/api/invites', {
+        label: f.get('label'),
+        maxUses: isGroup ? Number(f.get('maxUses')) : 1,
+        needsApproval: isGroup ? f.get('needsApproval') === 'on' : false,
+        days: Number(f.get('days')),
+      });
+      closeModal();
+      showInvite(r);
+    }, reload);
+  });
+}
+
+/** The link, shown once: copy, share (WhatsApp etc. on a phone or tablet) or scan. */
+function showInvite(r: { invite: InvitePublic; url: string; qrSvg: string }): void {
+  const who = r.invite.label ? ` for ${esc(r.invite.label)}` : '';
+  const text = `Join the Howth Coast Guard crew app: ${r.url}`;
+  const root = modal(`<h3>Invite link${who}</h3>
+    <div class="inv-show"><div class="inv-qr">${r.qrSvg}</div>
+      <div><input class="inv-url mono" readonly value="${esc(r.url)}" />
+        <div class="modal-actions left"><button type="button" class="btn-sm primary" id="inv-copy">Copy link</button>${'share' in navigator ? '<button type="button" class="btn-sm" id="inv-share">Share…</button>' : ''}</div>
+        <p class="muted small">${r.invite.maxUses > 1 ? `Up to ${r.invite.maxUses} people` : 'One person'}, until ${fmtDT(r.invite.expiresAt)}.${r.invite.needsApproval ? ' You approve each account under Users.' : ''} The link is shown only now: send it before closing. ${r.invite.maxUses > 1 ? 'Share it only with the crew, such as the crew WhatsApp group.' : 'Send it to the person directly.'}</p></div></div>
+    <div class="modal-actions"><button type="button" class="btn-sm" id="inv-close">Done</button></div>`);
+  root.querySelector('#inv-close')!.addEventListener('click', closeModal);
+  root.querySelector('#inv-copy')!.addEventListener('click', () => run(async () => { await navigator.clipboard.writeText(r.url); toast('Link copied'); }));
+  root.querySelector('#inv-share')?.addEventListener('click', () => navigator.share({ title: 'Crew app invite', text }).catch(() => {}));
 }
 
 function userModal(u: UserPublic | undefined, reload: () => Promise<void>): void {

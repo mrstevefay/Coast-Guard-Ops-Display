@@ -22,7 +22,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); f
 
 /* buttons */
 .btn-sm, .mini { border: 1px solid var(--line); background: var(--panel-2); color: var(--fg); border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-.btn-sm.primary { background: var(--accent); color: #062a26; border-color: var(--accent); }
+.btn-sm.primary, .mini.primary { background: var(--accent); color: #062a26; border-color: var(--accent); }
 .btn-sm.danger, .mini.danger { color: var(--red); border-color: var(--red); background: transparent; }
 .btn-sm.on { border-color: var(--yellow); color: var(--yellow); }
 .btn-sm.wide { width: 100%; justify-content: center; margin-top: 8px; }
@@ -393,3 +393,14 @@ input[type='file']::file-selector-button { background: var(--panel-2, #1c2733); 
 .oc-found[hidden] { display: none; }
 .oc-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hist-outcome { margin: 8px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* invites */
+.set-waiting { border: 1px solid var(--amber); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; background: rgba(245,158,11,0.06); }
+.set-waiting h3, .set-sub { margin: 0 0 6px; font-size: 14px; }
+.set-sub { margin-top: 18px; }
+.inv-show { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.inv-qr { background: #fff; padding: 8px; border-radius: 8px; width: 216px; height: 216px; flex: none; }
+.inv-qr svg { width: 200px; height: 200px; display: block; }
+.inv-show > div:last-child { flex: 1; min-width: 220px; }
+.inv-url { width: 100%; font-size: 12px; }
+.modal-actions.left { justify-content: flex-start; }
