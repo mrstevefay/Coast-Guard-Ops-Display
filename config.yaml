@@ -75,6 +75,13 @@ retention:
   # Days after an incident closes before next of kin and reporting person details are cleared.
   privateContactDays: 30
 
+device:
+  # Pi only: Wi-Fi settings page at /device/ (NetworkManager via nmcli). The Pi image
+  # turns this on in its systemd unit. Env: DEVICE_WIFI
+  wifi: false
+  # Password for /device/. Empty = use CALLOUT_TOKEN. Env: DEVICE_PASSWORD
+  password: ""
+
 upstream:
   # Pi only: mirror the hosted server for the kiosk. Env: UPSTREAM_URL / UPSTREAM_KEY
   url: ""

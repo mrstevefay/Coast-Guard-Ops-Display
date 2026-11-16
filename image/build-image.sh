@@ -88,7 +88,7 @@ chr apt-get update
 chr apt-get install -y --no-install-recommends \
   cage chromium libgl1-mesa-dri \
   fonts-dejavu fonts-liberation2 curl ca-certificates xz-utils \
-  dbus-user-session libegl1 libgles2
+  dbus-user-session libegl1 libgles2 polkitd
 chr apt-get clean
 rm -rf "$ROOT/var/lib/apt/lists/"*
 
@@ -118,6 +118,7 @@ cp -r "$HERE/rootfs/." "$ROOT/"
 mkdir -p "$ROOT/etc/howth-cg"
 cp "$APP_SRC/config.yaml" "$ROOT/etc/howth-cg/config.yaml"
 chmod +x "$APP"/bin/*.sh
+chmod 644 "$ROOT/etc/polkit-1/rules.d/50-howth-cg-wifi.rules"
 chr chown -R root:root /opt/howth-cg
 # Build stamp
 echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ) node=$NODE_VERSION" > "$APP/BUILD"

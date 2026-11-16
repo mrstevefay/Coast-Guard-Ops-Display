@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Pi Wi-Fi from a phone.** The station Pi serves `/device/`: current network, signal, IP and Ethernet state; scan; join a new or hidden network (WPA2, WPA3 or open); reconnect to or forget saved ones. Protected by `DEVICE_PASSWORD` (falls back to `CALLOUT_TOKEN`, never the template placeholder), with a 15-minute lockout after 10 wrong tries.
+  - **Can't strand the Pi:** a join runs in the background after the reply has gone out; on failure the new profile is deleted and the previous network is brought back. Forgetting the only connection is refused unless Ethernet is up. The last network chosen gets top autoconnect priority.
+  - **Pi image:** `polkitd` plus a polkit rule letting the `howthcg` user scan and change NetworkManager connections only; `DEVICE_WIFI=true` in the dashboard unit. Off everywhere else (`device.wifi` in `config.yaml`).
+  - `server/src/device/`, `web/src/device/`; tests use a fake `nmcli`.
 - **Map labels no longer pile up.** On the console, crew map and TV, labels are placed in order of importance: last known position and incident first, then PLS and finds, team callsigns, the station, other points, targets, behaviour rings, segments and range rings. Each label tries below, above, right and left of its point, keeps clear of other points' dots, prefers spots that stay on screen, and hides when there is no room. Its dot stays, and the label returns on zoom in. The LKP and station always show. Crew of one team whose labels would overlap share one label ("Alpha ×3") centred on them, which splits again on zoom in. `shared/declutter.ts`.
 - **Probability updates as areas are searched, and outcome recording.**
   - **POD:** marking an area searched, on the console or the crew phone, asks how thorough it was (Quick look 30 %, Normal 50 %, Thorough 70 %, Very thorough 90 %). Where the team's tracks cover the area, it also shows the POD they suggest (`GET /api/targets/:id/coverage`). Targets keep the segment they came from (`segmentId`) and their POD.

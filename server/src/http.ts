@@ -23,6 +23,8 @@ import type { Settings } from './settings.js';
 import type { Devices } from './search/devices.js';
 import { owntracksRoutes } from './search/owntracks.js';
 import { TerrainService } from './terrain/service.js';
+import { deviceRoutes } from './device/routes.js';
+import { WifiManager } from './device/wifi.js';
 import { searchRoutes } from './search/routes.js';
 import type { SearchService } from './search/service.js';
 import type { Tracking } from './search/tracking.js';
@@ -52,6 +54,8 @@ export interface ServerDeps {
   settings?: Settings;
   /** Rebuild one provider from the current config after a setting changed. */
   rebuildProvider?: (name: string) => Promise<void>;
+  /** Pi Wi-Fi (device page). Built from nmcli when cfg.device.wifi is on and none is given. */
+  wifi?: WifiManager;
 }
 
 export interface BuiltServer {
@@ -189,6 +193,12 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
     });
   }
 
+  // ---- station Pi: Wi-Fi settings for /device/ ----
+  if (cfg.device?.wifi) {
+    const wifi = deps.wifi ?? new WifiManager({ log: app.log });
+    await app.register(async (sub) => deviceRoutes(sub, { ...auth, audit: deps.audit, wifi }));
+  }
+
   // ---- WebSocket hub ----
   const hub = new Hub(store, auth);
   hub.register(app);
@@ -256,6 +266,7 @@ export async function buildServer(cfg: AppConfig, store: StateStore, callout: Ca
       // Multi-page app: /m/... → crew PWA, /sm/... → search manager console, else TV.
       if (url.startsWith('/m/') || url === '/m') return reply.sendFile('m/index.html');
       if (url.startsWith('/sm/') || url === '/sm') return reply.sendFile('sm/index.html');
+      if (url.startsWith('/device/') || url === '/device') return reply.sendFile('device/index.html');
       return reply.sendFile('index.html');
     });
     app.log.info({ dist }, 'serving web build');

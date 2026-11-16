@@ -2,7 +2,8 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Three pages share one build: / (TV kiosk), /m/ (crew PWA), /sm/ (search console).
+// Four pages share one build: / (TV kiosk), /m/ (crew PWA), /sm/ (search console),
+// /device/ (the station Pi's Wi-Fi settings).
 // Dev server proxies API + WebSocket + OwnTracks to the Fastify server on :8080.
 export default defineConfig({
   server: {
@@ -23,6 +24,7 @@ export default defineConfig({
         tv: resolve(__dirname, 'index.html'),
         m: resolve(__dirname, 'm/index.html'),
         sm: resolve(__dirname, 'sm/index.html'),
+        device: resolve(__dirname, 'device/index.html'),
       },
     },
     chunkSizeWarningLimit: 1500,
@@ -53,7 +55,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
-        globIgnores: ['index.html', 'sm/**'],
+        globIgnores: ['index.html', 'sm/**', 'device/**'],
         navigateFallback: '/m/index.html',
         navigateFallbackAllowlist: [/^\/m(\/|$)/],
         runtimeCaching: [

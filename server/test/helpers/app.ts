@@ -7,7 +7,7 @@ import { Users } from '../../src/auth/users.js';
 import { CalloutManager } from '../../src/callout.js';
 import { loadConfig, type AppConfig } from '../../src/config.js';
 import { openDb } from '../../src/db/index.js';
-import { buildServer } from '../../src/http.js';
+import { buildServer, type ServerDeps } from '../../src/http.js';
 import { Scheduler } from '../../src/scheduler.js';
 import { Devices } from '../../src/search/devices.js';
 import { SearchService } from '../../src/search/service.js';
@@ -20,7 +20,7 @@ const quiet = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}
  * Builds a full server on an in-memory DB with accounts ON, no providers, no
  * web dist. Returns helpers to log in as seeded users.
  */
-export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
+export async function testApp(overrides: (c: AppConfig) => void = () => {}, extra: Partial<ServerDeps> = {}) {
   const cfg = loadConfig(path.resolve(__dirname, '../../../config.yaml'));
   cfg.server.dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-test-'));
   cfg.auth.open = false;
@@ -47,7 +47,7 @@ export async function testApp(overrides: (c: AppConfig) => void = () => {}) {
     search = new SearchService(db, cfg, store, users, tracking);
     tracking.context = search;
   }
-  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search });
+  const { app, hub } = await buildServer(cfg, store, callout, scheduler, { db, users, sessions, audit, devices, tracking, search, ...extra });
   await app.ready();
 
   const seed = {

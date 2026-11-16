@@ -51,6 +51,35 @@ The TV shows the hosted picture (callouts, teams, targets) while reachable and s
 hosted server (`POST https://ops.<domain>/api/callout` with the bridge token); the Pi's own
 `/api/callout` remains an emergency path for the LAN.
 
+### Pi Wi-Fi
+
+From any phone or laptop on the same network: `http://howth-cg.local:8080/device/`
+(password `DEVICE_PASSWORD` in `bootfs/howth-cg.env`; blank falls back to `CALLOUT_TOKEN`).
+Shows the current network, signal, IP and Ethernet; scans; joins a new or hidden network;
+reconnects to or forgets saved ones.
+
+* **Switching is safe:** the join runs in the background. If it fails (wrong password, out
+  of range) the new profile is deleted and the Pi goes back to the previous network within
+  about a minute. If it works and you were on the old Wi-Fi, the page loses contact: join the
+  new network and open the same address.
+* The network chosen last gets the highest autoconnect priority, so it wins after a reboot.
+* Forgetting the Pi's only connection is refused unless Ethernet is plugged in.
+* 10 wrong passwords from one address locks it out for 15 minutes. Joins and forgets go in
+  the audit log (network name only, never the password).
+* First network on a fresh card: still `howth-cg-wifi.conf` on the boot partition, or Ethernet.
+
+**Pi flashed before this existed** (no reflash needed), over SSH:
+
+```bash
+sudo apt-get install -y polkitd
+sudo tee /etc/polkit-1/rules.d/50-howth-cg-wifi.rules < 50-howth-cg-wifi.rules   # from image/rootfs/etc/polkit-1/rules.d/
+sudo mkdir -p /etc/systemd/system/howth-cg-dashboard.service.d
+printf '[Service]\nEnvironment=DEVICE_WIFI=true\n' | sudo tee /etc/systemd/system/howth-cg-dashboard.service.d/wifi.conf
+sudo systemctl daemon-reload && sudo systemctl restart polkit howth-cg-dashboard
+```
+
+plus an app update and `DEVICE_PASSWORD=` in `howth-cg.env`.
+
 ## Day-to-day
 
 | Task | How |

@@ -17,6 +17,8 @@ Environment=HOST=0.0.0.0
 Environment=DATA_DIR=/var/lib/howth-cg
 Environment=WEB_DIST=/opt/howth-cg/web/dist
 Environment=TZ=Europe/Dublin
+# Wi-Fi page at /device/ (nmcli; allowed by /etc/polkit-1/rules.d/50-howth-cg-wifi.rules)
+Environment=DEVICE_WIFI=true
 ExecStart=/opt/howth-cg/bin/start.sh
 Restart=always
 RestartSec=5

@@ -14,6 +14,10 @@ Before first boot (optional, all on this partition)
   userconf.txt      login user. Default  cg / howthcg  — CHANGE IT (see README).
 
 Wi-Fi
+  Once the Pi is on the network (Ethernet or Wi-Fi), change Wi-Fi from a phone or
+  laptop at  http://howth-cg.local:8080/device/  (password: DEVICE_PASSWORD in
+  howth-cg.env). A failed switch puts the Pi back on the previous network.
+  For the very first network:
   Rename howth-cg-wifi.conf.example to howth-cg-wifi.conf and fill in SSID/PSK
   (up to two networks). Applied at boot by NetworkManager, then renamed to
   .applied. Ethernet needs nothing. (network-config/user-data cloud-init files

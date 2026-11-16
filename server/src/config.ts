@@ -46,6 +46,13 @@ export interface AppConfig {
     /** Days after an incident closes before next-of-kin and reporting-person details are cleared; 0 = keep. */
     privateContactDays: number;
   };
+  /** The station Pi's own settings page (/device/). */
+  device?: {
+    /** Manage Wi-Fi through NetworkManager. On in the Pi image only. Env: DEVICE_WIFI */
+    wifi: boolean;
+    /** Password for /device/. Empty = fall back to callout.token. Env: DEVICE_PASSWORD */
+    password: string;
+  };
   upstream: {
     /** wss://ops.example.ie — when set, this server mirrors the hosted one for the kiosk. */
     url: string;
@@ -100,6 +107,8 @@ const NAMED_ENV: Record<string, string> = {
   ADMIN_NAME: 'auth.adminName',
   UPSTREAM_URL: 'upstream.url',
   UPSTREAM_KEY: 'upstream.key',
+  DEVICE_WIFI: 'device.wifi',
+  DEVICE_PASSWORD: 'device.password',
   WEBCAM_IMAGE_URL: 'providers.webcam.imageUrl',
   STATION_NAME: 'station.name',
   STATION_LAT: 'station.lat',

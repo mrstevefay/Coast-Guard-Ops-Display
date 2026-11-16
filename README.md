@@ -27,6 +27,10 @@ covered-area overlay. The station Pi mirrors the hosted server for the TV and fa
 its own feeds if the internet drops. Docs: [RUNBOOK](docs/RUNBOOK.md),
 [OWNTRACKS](docs/OWNTRACKS.md), [PRIVACY](docs/PRIVACY.md).
 
+**Pi Wi-Fi:** `http://howth-cg.local:8080/device/` on the station network changes the Pi's
+Wi-Fi from a phone (device password `DEVICE_PASSWORD`); a failed switch rolls back to the
+previous network. See [RUNBOOK → Pi Wi-Fi](docs/RUNBOOK.md#pi-wi-fi).
+
 ## What is on screen
 
 **Standby**: clock, date, station, active Met Éireann warnings banner (marine + Dublin
@@ -98,7 +102,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/<you>/howth-cg
 Everything lives in `config.yaml` (mounted read-only into the container). Any key can be
 overridden from the environment:
 
-* Named shortcuts: `PORT`, `HOST`, `DATA_DIR`, `CALLOUT_TOKEN`, `CALLOUT_AUTO_STANDDOWN_MINUTES`,
+* Named shortcuts: `DEVICE_WIFI`, `DEVICE_PASSWORD`, `PORT`, `HOST`, `DATA_DIR`, `CALLOUT_TOKEN`, `CALLOUT_AUTO_STANDDOWN_MINUTES`,
   `AISSTREAM_API_KEY`, `WEBCAM_IMAGE_URL`, `STATION_NAME`, `STATION_LAT`, `STATION_LON`, `MAP_TILE_URL`.
 * Generic: `CFG__<path>__<to>__<key>=value`, e.g. `CFG__providers__ais__enabled=false`,
   `CFG__panels__webcam=false`, `CFG__providers__metWarnings__localRegionCodes=EI07,EI18`.
@@ -121,6 +125,10 @@ Key sections: `station` (coords, name), `callout` (token, auto stand-down minute
 | POST | `/api/callout` | Bearer | Body `{ "text": "...", "lat"?: n, "lon"?: n, "receivedAt"?: iso, "source"?: "whatsapp" }` → callout mode |
 | POST | `/api/standdown` | Bearer | Back to standby |
 | POST | `/api/refresh?provider=name` | Bearer | Force a poll (debugging) |
+| GET | `/api/device/wifi` | Device pw | Pi only (`DEVICE_WIFI=true`): Wi-Fi status, saved networks, last join attempt |
+| POST | `/api/device/wifi/scan` | Device pw | Nearby networks |
+| POST | `/api/device/wifi/connect` | Device pw | `{ "ssid", "password"?, "hidden"? }` → 202; joins in the background, rolls back on failure |
+| POST / DELETE | `/api/device/wifi/saved/:uuid[/connect]` | Device pw | Reconnect to / forget a saved network |
 
 Auth is `Authorization: Bearer <CALLOUT_TOKEN>` (or `X-Api-Token`), or a signed-in manager's
 session. With no token configured and accounts off, the mutating endpoints return 503.
