@@ -1,0 +1,15 @@
+[Unit]
+Description=Join Tailscale with TAILSCALE_AUTHKEY from /boot/firmware/howth-cg.env
+After=tailscaled.service network-online.target boot-firmware.mount
+Wants=network-online.target
+Requires=tailscaled.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/boot/firmware/howth-cg.env
+ExecStart=/opt/howth-cg/bin/tailscale-join.sh
+RemainAfterExit=yes
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

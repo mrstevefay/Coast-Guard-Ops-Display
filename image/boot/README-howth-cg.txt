@@ -23,9 +23,16 @@ Wi-Fi
   .applied. Ethernet needs nothing. (network-config/user-data cloud-init files
   are also left as examples but did not apply on the first test Pi.)
 
+Remote access (Tailscale)
+  Put a Tailscale auth key in howth-cg.env as TAILSCALE_AUTHKEY before first boot.
+  The Pi joins your tailnet as "howth-cg" (Tailscale SSH on) and the key is blanked.
+  Then from anywhere on your tailnet:  ssh cg@howth-cg   http://howth-cg:8080/device/
+  In the Tailscale admin console, disable key expiry for the Pi.
+
 Logs / admin (ssh cg@howth-cg.local)
   sudo journalctl -u howth-cg-dashboard -f
   sudo journalctl -u howth-cg-kiosk -f
+  sudo journalctl -u howth-cg-tailscale     (did it join?)   tailscale status
   curl -s localhost:8080/healthz
   sudo systemctl restart howth-cg-kiosk
 

@@ -83,12 +83,18 @@ rm -f "$ROOT/etc/resolv.conf"; cp /etc/resolv.conf "$ROOT/etc/resolv.conf"
 chr() { chroot "$ROOT" /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin DEBIAN_FRONTEND=noninteractive LC_ALL=C "$@"; }
 
 # ---------------------------------------------------------------- packages
+# Tailscale's apt repo, for the codename this Pi OS release is built on.
+CODENAME=$(. "$ROOT/etc/os-release" && echo "$VERSION_CODENAME")
+log "adding Tailscale apt repo ($CODENAME)"
+curl -fsSL --retry 3 "https://pkgs.tailscale.com/stable/debian/${CODENAME}.noarmor.gpg" -o "$ROOT/usr/share/keyrings/tailscale-archive-keyring.gpg"
+curl -fsSL --retry 3 "https://pkgs.tailscale.com/stable/debian/${CODENAME}.tailscale-keyring.list" -o "$ROOT/etc/apt/sources.list.d/tailscale.list"
+
 log "installing packages (chromium + cage under emulation: this takes a while)"
 chr apt-get update
 chr apt-get install -y --no-install-recommends \
   cage chromium libgl1-mesa-dri \
   fonts-dejavu fonts-liberation2 curl ca-certificates xz-utils \
-  dbus-user-session libegl1 libgles2 polkitd
+  dbus-user-session libegl1 libgles2 polkitd tailscale
 chr apt-get clean
 rm -rf "$ROOT/var/lib/apt/lists/"*
 
@@ -125,7 +131,9 @@ echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ) node=$NODE_VERSION" > "$APP/BUILD"
 
 # ---------------------------------------------------------------- services
 log "enabling services"
-chr systemctl enable howth-cg-dashboard.service howth-cg-kiosk.service howth-cg-wifi.service
+chr systemctl enable howth-cg-dashboard.service howth-cg-kiosk.service howth-cg-wifi.service tailscaled.service howth-cg-tailscale.service
+# Tailscale state must not be baked in: every card joins as its own machine.
+rm -rf "$ROOT/var/lib/tailscale/"*
 # The kiosk owns tty1. Masking (not just disabling) stops logind/getty.target
 # from spawning a login prompt there, which would Conflict= the kiosk away.
 chr systemctl mask getty@tty1.service

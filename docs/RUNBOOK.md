@@ -51,6 +51,29 @@ The TV shows the hosted picture (callouts, teams, targets) while reachable and s
 hosted server (`POST https://ops.<domain>/api/callout` with the bridge token); the Pi's own
 `/api/callout` remains an emergency path for the LAN.
 
+### Pi remote access (Tailscale)
+
+Images built from now on include Tailscale. Before first boot, create an auth key in the
+Tailscale admin console (Settings → Keys → Generate auth key: one-off, not ephemeral;
+tick Pre-approved if device approval is on) and put it in `bootfs/howth-cg.env`:
+
+```
+TAILSCALE_AUTHKEY=tskey-auth-...
+#TAILSCALE_HOSTNAME=howth-cg     # optional; one per station if you have several
+```
+
+`howth-cg-tailscale.service` joins on first boot with Tailscale SSH on, retries for about
+five minutes if the network is slow, then blanks the key in `howth-cg.env`. Each card joins
+as its own machine (no Tailscale state is baked into the image). Afterwards, in the admin
+console: **Machines → howth-cg → Disable key expiry**.
+
+From any device on the tailnet: `ssh cg@howth-cg`, `http://howth-cg:8080/device/`,
+`http://howth-cg:8080/healthz`. Do not also port-forward SSH or 8080 on the station router.
+Check a join with `sudo journalctl -u howth-cg-tailscale` and `tailscale status`.
+
+A Pi flashed earlier: `curl -fsSL https://tailscale.com/install.sh | sh` then
+`sudo tailscale up --ssh --hostname howth-cg`.
+
 ### Pi Wi-Fi
 
 From any phone or laptop on the same network: `http://howth-cg.local:8080/device/`

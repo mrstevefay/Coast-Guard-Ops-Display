@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Tailscale in the Pi image.** Put `TAILSCALE_AUTHKEY` in `howth-cg.env` before first boot and the Pi joins your tailnet as `howth-cg` with Tailscale SSH, then blanks the key on the card. No Tailscale state is baked in, so every card joins as its own machine. Installed from Tailscale's apt repo for the image's Debian release; `howth-cg-tailscale.service` + `bin/tailscale-join.sh`.
 - **Pi Wi-Fi from a phone.** The station Pi serves `/device/`: current network, signal, IP and Ethernet state; scan; join a new or hidden network (WPA2, WPA3 or open); reconnect to or forget saved ones. Protected by `DEVICE_PASSWORD` (falls back to `CALLOUT_TOKEN`, never the template placeholder), with a 15-minute lockout after 10 wrong tries.
   - **Can't strand the Pi:** a join runs in the background after the reply has gone out; on failure the new profile is deleted and the previous network is brought back. Forgetting the only connection is refused unless Ethernet is up. The last network chosen gets top autoconnect priority.
   - **Pi image:** `polkitd` plus a polkit rule letting the `howthcg` user scan and change NetworkManager connections only; `DEVICE_WIFI=true` in the dashboard unit. Off everywhere else (`device.wifi` in `config.yaml`).
