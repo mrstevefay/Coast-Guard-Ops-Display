@@ -145,3 +145,18 @@ Check first whether the Coast Guard, as a public body under the Department of Tr
 5. Rebuilds are planned, for example every quarter for OpenStreetMap changes, or when a better source is licensed. They are never done during a callout.
 
 **Acceptance.** A fresh server deployed with no internet access beyond the release has terrain and place search working at first start. The Settings page names the package and its sources. No terrain download code runs on the live server.
+
+## 9. Feed settings (API keys, webcam) from the Pi's device page
+
+**Why.** On the hosted server, Settings → Data feeds already edits the AIS key, Dublin Bay buoy key, webcam URL and webcam label at runtime. The station Pi runs without accounts, so that console doesn't load there. Changing a key on the Pi today means SSH or pulling the SD card to edit `howth-cg.env`, then a restart. When the Pi falls back to local feeds, its own keys are the ones that matter.
+
+**What.**
+1. A **Feeds** section on `/device/`, next to Wi-Fi, behind the same device password. It lists each setting with where its current value comes from (screen, env file or `config.yaml`), and secrets masked to their last 4 characters.
+2. Server: let the existing `GET|PUT /api/admin/settings` accept the device password, as the Wi-Fi routes do. The storage and precedence stay as they are (`server/src/settings.ts`): a value set on screen overrides the env file and `config.yaml`, clearing it falls back, and the affected feed restarts at once.
+3. **Webcam:** paste a still-image URL and see a live preview before saving. Also show the label and the refresh interval. A URL that doesn't return an image within 10 s is warned about, not saved silently.
+4. **AIS key:** a **Test** button that opens the aisstream.io stream for 15 s and reports vessels seen or the error, so a mistyped key shows up before anyone relies on it.
+5. Each change goes in the audit log, as on the hosted server: key name and cleared/set only, never the value.
+
+**Not in scope.** Changing `UPSTREAM_URL`/`UPSTREAM_KEY` or the callout token from the page. Getting those wrong cuts the Pi off from the hosted server or the pager bridge, so they stay in `howth-cg.env`.
+
+**Acceptance.** On a Pi in open mode, set an AIS key and a webcam URL from a phone at `/device/`. Vessels and the webcam appear on the TV within a minute, without a restart or SSH. Clearing either falls back to the value in `howth-cg.env`.
